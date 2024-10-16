@@ -1,6 +1,11 @@
+
 [workspace]
-resolver = "2"
-members = []
+resolver = '2'
+members = [
+	'apps/discord_bot',
+	'libs/models',
+	'libs/spectre',
+]
 
 [profile.release]
 lto = true

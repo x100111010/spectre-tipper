@@ -1,0 +1,15 @@
+[package]
+name = "discord_bot"
+version = "0.1.0"
+edition = "2021"
+
+
+[dependencies]
+tokio = { version = "1", features = ["full"] }
+poise = {version = "0.6.1"}
+spectre-wrpc-client = { git = "https://github.com/spectre-project/rusty-spectre.git", branch = "main" }
+spectre = {path = "../../libs/spectre"}
+models = {path = "../../libs/models"}
+spectre-wallet-core = { git = "https://github.com/spectre-project/rusty-spectre.git", branch = "main" }
+spectre-wallet-keys = { git = "https://github.com/spectre-project/rusty-spectre.git", branch = "main" }
+dotenvy = "0.15.7"

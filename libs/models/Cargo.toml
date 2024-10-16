@@ -1,0 +1,11 @@
+[package]
+name = "models"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+spectre-consensus-core = { git = "https://github.com/spectre-project/rusty-spectre.git", branch = "main" }
+spectre-wrpc-client = { git = "https://github.com/spectre-project/rusty-spectre.git", branch = "main" }
+spectre-wallet-core = { git = "https://github.com/spectre-project/rusty-spectre.git", branch = "main" }
+thiserror = {version = "1.0.64"}
+
