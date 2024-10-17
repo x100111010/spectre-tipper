@@ -663,6 +663,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "core"
+version = "0.1.0"
+dependencies = [
+ "spectre-addresses",
+ "spectre-bip32",
+ "spectre-consensus-core",
+ "spectre-wallet-core",
+ "spectre-wallet-keys",
+ "spectre-wrpc-client",
+ "thiserror",
+ "tokio",
+]
+
+[[package]]
 name = "core-foundation"
 version = "0.9.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -944,10 +958,9 @@ dependencies = [
 name = "discord_bot"
 version = "0.1.0"
 dependencies = [
+ "core",
  "dotenvy",
- "models",
  "poise",
- "spectre",
  "spectre-wallet-core",
  "spectre-wallet-keys",
  "spectre-wrpc-client",
@@ -1951,16 +1964,6 @@ dependencies = [
  "libc",
  "wasi",
  "windows-sys 0.52.0",
-]
-
-[[package]]
-name = "models"
-version = "0.1.0"
-dependencies = [
- "spectre-consensus-core",
- "spectre-wallet-core",
- "spectre-wrpc-client",
- "thiserror",
 ]
 
 [[package]]
@@ -2975,20 +2978,6 @@ name = "sorted-insert"
 version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5dd62203d74a728ae353b4d716fc2a80e8da881dfdf8bbc0c012d877a58c4030"
-
-[[package]]
-name = "spectre"
-version = "0.1.0"
-dependencies = [
- "models",
- "spectre-addresses",
- "spectre-bip32",
- "spectre-wallet-core",
- "spectre-wallet-keys",
- "spectre-wrpc-client",
- "thiserror",
- "tokio",
-]
 
 [[package]]
 name = "spectre-addresses"

@@ -3,8 +3,7 @@
 resolver = '2'
 members = [
 	'apps/discord_bot',
-	'libs/models',
-	'libs/spectre',
+	'libs/core',
 ]
 
 [profile.release]

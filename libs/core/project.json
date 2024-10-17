@@ -1,8 +1,8 @@
 {
-  "name": "spectre",
+  "name": "core",
   "$schema": "../../node_modules/nx/schemas/project-schema.json",
   "projectType": "library",
-  "sourceRoot": "libs/spectre/src",
+  "sourceRoot": "libs/core/src",
   "targets": {
     "build": {
       "executor": "@monodon/rust:check",
@@ -10,7 +10,7 @@
         "{options.target-dir}"
       ],
       "options": {
-        "target-dir": "dist/target/spectre"
+        "target-dir": "dist/target/core"
       }
     },
     "test": {
@@ -20,7 +20,7 @@
         "{options.target-dir}"
       ],
       "options": {
-        "target-dir": "dist/target/spectre"
+        "target-dir": "dist/target/core"
       },
       "configurations": {
         "production": {
@@ -35,7 +35,7 @@
         "{options.target-dir}"
       ],
       "options": {
-        "target-dir": "dist/target/spectre"
+        "target-dir": "dist/target/core"
       }
     }
   },

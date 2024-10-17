@@ -1,7 +1,10 @@
-use std::sync::Arc;
+use std::{
+    sync::Arc,
+    time::{self, SystemTime},
+};
 
 use crate::result::Result;
-use models::tip_context::TipContext;
+use crate::tip_context::TipContext;
 use spectre_addresses::Address;
 use spectre_wallet_core::{
     prelude::{EncryptionKind, Language, Mnemonic, WordCount},
@@ -10,21 +13,30 @@ use spectre_wallet_core::{
 };
 use spectre_wallet_keys::secret::Secret;
 
+#[derive(Clone)]
 pub struct TipOwnedWallet {
     owned_identifier: String,
     wallet: Arc<Wallet>,
     receive_address: Address,
+    opened_at: SystemTime,
 }
 
 impl TipOwnedWallet {
+    pub fn new(owned_identifier: String, wallet: Arc<Wallet>, receive_address: Address) -> Self {
+        TipOwnedWallet {
+            opened_at: SystemTime::now(),
+            owned_identifier,
+            receive_address,
+            wallet,
+        }
+    }
+
     pub async fn create(
         tip_context: Arc<TipContext>,
         wallet_secret: &Secret,
         owned_identifier: &str,
-    ) -> Result<(TipOwnedWallet, Secret)> {
+    ) -> Result<(TipOwnedWallet, Mnemonic)> {
         let mnemonic = Mnemonic::random(WordCount::Words12, Language::default())?;
-        let mnemonic_secret = Secret::from(mnemonic.clone().phrase());
-
         let localstore = Wallet::local_store()?;
 
         let wallet = Wallet::try_new(
@@ -74,16 +86,12 @@ impl TipOwnedWallet {
 
         wallet_arc.activate_accounts(None).await?;
 
-        tip_context.add_opened_wallet(owned_identifier.into(), wallet);
+        let tip_owned_wallet = tip_context.add_opened_wallet(
+            owned_identifier.into(),
+            TipOwnedWallet::new(owned_identifier.into(), wallet_arc, receive_address),
+        );
 
-        return Ok((
-            TipOwnedWallet {
-                owned_identifier: owned_identifier.into(),
-                wallet: wallet_arc,
-                receive_address,
-            },
-            mnemonic_secret,
-        ));
+        return Ok((tip_owned_wallet, mnemonic));
     }
 
     pub async fn open(
@@ -110,13 +118,12 @@ impl TipOwnedWallet {
 
         let receive_address = wallet_arc.account()?.receive_address()?;
 
-        tip_context.add_opened_wallet(owned_identifier.into(), wallet);
+        let tip_owned_wallet = tip_context.add_opened_wallet(
+            owned_identifier.into(),
+            TipOwnedWallet::new(owned_identifier.into(), wallet_arc, receive_address),
+        );
 
-        return Ok(TipOwnedWallet {
-            owned_identifier: owned_identifier.into(),
-            receive_address: receive_address,
-            wallet: wallet_arc,
-        });
+        return Ok(tip_owned_wallet);
     }
 
     /**
@@ -178,13 +185,12 @@ impl TipOwnedWallet {
 
         wallet_arc.activate_accounts(None).await?;
 
-        tip_context.add_opened_wallet(owned_identifier.into(), wallet);
+        let tip_owned_wallet = tip_context.add_opened_wallet(
+            owned_identifier.into(),
+            TipOwnedWallet::new(owned_identifier.into(), wallet_arc, receive_address),
+        );
 
-        return Ok(TipOwnedWallet {
-            owned_identifier: owned_identifier.into(),
-            wallet: wallet_arc,
-            receive_address,
-        });
+        return Ok(tip_owned_wallet);
     }
 
     pub fn owned_identifier(&self) -> &str {
@@ -219,25 +225,23 @@ mod tests {
 
     use super::*;
 
-    async fn get_ctx() -> Arc<TipContext> {
-        TipContext::try_new_arc(Resolver::default(), NetworkId::new(NetworkType::Mainnet))
-            .await
-            .unwrap()
+    fn get_ctx() -> Arc<TipContext> {
+        TipContext::new_arc(Resolver::default(), NetworkId::new(NetworkType::Mainnet))
     }
 
     #[tokio::test]
     async fn test_create_wallet() {
-        TipOwnedWallet::create(get_ctx().await, &Secret::from("value"), "identifier")
+        TipOwnedWallet::create(get_ctx(), &Secret::from("value"), "identifier")
             .await
             .unwrap();
     }
 
     #[tokio::test]
     async fn test_open_wallet() {
-        TipOwnedWallet::create(get_ctx().await, &Secret::from("value"), "identifier2")
+        TipOwnedWallet::create(get_ctx(), &Secret::from("value"), "identifier2")
             .await
             .unwrap();
-        TipOwnedWallet::open(get_ctx().await, &Secret::from("value"), "identifier2")
+        TipOwnedWallet::open(get_ctx(), &Secret::from("value"), "identifier2")
             .await
             .unwrap();
     }
@@ -245,9 +249,8 @@ mod tests {
     #[tokio::test]
     #[should_panic]
     async fn test_open_wallet_with_wrong_secret() {
-        let _ =
-            TipOwnedWallet::create(get_ctx().await, &Secret::from("value"), "identifier3").await;
-        TipOwnedWallet::open(get_ctx().await, &Secret::from("value2"), "identifier3")
+        let _ = TipOwnedWallet::create(get_ctx(), &Secret::from("value"), "identifier3").await;
+        TipOwnedWallet::open(get_ctx(), &Secret::from("value2"), "identifier3")
             .await
             .unwrap();
     }
@@ -255,12 +258,8 @@ mod tests {
     #[tokio::test]
     #[should_panic]
     async fn test_open_wallet_with_innexistant_wallet() {
-        TipOwnedWallet::open(
-            get_ctx().await,
-            &Secret::from("value2"),
-            "identifier_innexistant",
-        )
-        .await
-        .unwrap();
+        TipOwnedWallet::open(get_ctx(), &Secret::from("value2"), "identifier_innexistant")
+            .await
+            .unwrap();
     }
 }
