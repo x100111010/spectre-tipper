@@ -133,9 +133,6 @@ async fn open(
         return Ok(());
     }
 
-    // TODO: add check a wallet doesn't exist yet
-    //       else ask remove first (needs implementation, warning: a wallet can be opened need to be closed first)
-
     let tip_wallet_result = TipOwnedWallet::open(
         tip_context.clone(),
         &Secret::from(secret),
