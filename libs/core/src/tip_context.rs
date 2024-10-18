@@ -12,13 +12,19 @@ pub struct TipContext {
     resolver: Resolver,
     network_id: NetworkId,
     opened_wallet: RwLock<HashMap<String, TipOwnedWallet>>,
+    forced_node_url: Option<String>,
 }
 
 impl TipContext {
-    pub fn new_arc(resolver: Resolver, network_id: NetworkId) -> Arc<Self> {
+    pub fn new_arc(
+        resolver: Resolver,
+        network_id: NetworkId,
+        forced_node_url: Option<String>,
+    ) -> Arc<Self> {
         Arc::new(TipContext {
             network_id,
             resolver,
+            forced_node_url,
             opened_wallet: RwLock::new(HashMap::new()),
         })
     }
@@ -74,5 +80,9 @@ impl TipContext {
      */
     pub fn local_store(&self) -> Result<Arc<dyn Interface>> {
         Ok(Wallet::local_store()?)
+    }
+
+    pub fn forced_node_url(&self) -> Option<String> {
+        self.forced_node_url.clone()
     }
 }

@@ -960,11 +960,15 @@ version = "0.1.0"
 dependencies = [
  "core",
  "dotenvy",
+ "futures",
  "poise",
+ "spectre-addresses",
  "spectre-wallet-core",
  "spectre-wallet-keys",
  "spectre-wrpc-client",
+ "spectre-wrpc-wasm",
  "tokio",
+ "workflow-core",
 ]
 
 [[package]]
