@@ -12,7 +12,7 @@ use spectre_addresses::{Address, Prefix, Version};
 use spectre_wallet_core::{
     api::WalletApi,
     prelude::{Language, Mnemonic},
-    rpc::{ConnectOptions, Rpc, RpcApi},
+    rpc::{ConnectOptions, Rpc, RpcApi, RpcCtl},
     tx::{Fees, PaymentDestination, PaymentOutputs},
 };
 use spectre_wallet_keys::secret::Secret;
@@ -383,49 +383,44 @@ async fn send(
     //     .await?;
 
     // for now use the forced url variable, but this should not be used for production
-    // let forced_node_url = tip_context.forced_node_url();
+    let forced_node_url = tip_context.forced_node_url();
 
     // tip_wallet
     //     .wallet()
-    //     .connect(forced_node_url, tip_context.network_id())
+    //     .connect(forced_node_url.clone(), tip_context.network_id())
     //     .await?;
 
-    // let wrpc_client = SpectreRpcClient::new(
-    //     WrpcEncoding::Borsh,
-    //     Some(&forced_node_url.unwrap()),
-    //     None,
-    //     Some(tip_context.network_id()),
-    //     None,
-    // )?;
+    let wrpc_client = Arc::new(SpectreRpcClient::new(
+        WrpcEncoding::Borsh,
+        Some(&forced_node_url.unwrap()),
+        None,
+        Some(tip_context.network_id()),
+        None,
+    )?);
 
-    // wrpc_client
-    //     .connect(Some(ConnectOptions {
-    //         block_async_connect: true,
-    //         ..Default::default()
-    //     }))
-    //     .await?;
+    wrpc_client
+        .connect(Some(ConnectOptions {
+            block_async_connect: true,
+            ..Default::default()
+        }))
+        .await?;
 
-    // let rpc_client = RpcClient::new(Some(RpcConfig {
-    //     encoding: Some(WrpcEncoding::Borsh),
-    //     network_id: Some(tip_context.network_id()),
-    //     resolver: None,
-    //     url: Some(forced_node_url.unwrap()),
-    // }))?;
+    let rpc_ctl = RpcCtl::new();
 
-    // rpc_client.connect(Some(IConnectOptions {
-    //     block_async_connect: true,
-    //     ..Default::default()
-    // }));
+    let rpc = Rpc::new(wrpc_client, rpc_ctl);
 
-    // tip_wallet.wallet().bind_rpc();
+    tip_wallet.wallet().bind_rpc(Some(rpc)).await?;
+    tip_wallet.wallet().start().await?;
 
     let address = Address::constructor(
-        "spectredev:qplc746exga4erlhakrhlanhq5yef8e4qfffaledagmpj0kel99vzespedj6a",
+        "spectretest:qplc746exga4erlhakrhlanhq5yef8e4qfffaledagmpj0kel99vzfkqe4f3w",
     );
 
     let amount_sompi = try_parse_required_nonzero_spectre_as_sompi_u64(Some(amount))?;
 
-    let outputs = PaymentOutputs::from((address, amount_sompi));
+    println!("amount sompi {}", amount_sompi);
+
+    let outputs = PaymentOutputs::from((address, 1000));
 
     let abortable = Abortable::default();
 
@@ -433,15 +428,19 @@ async fn send(
 
     let account = tip_wallet.wallet().account()?;
 
-    account.clone().connect().await?;
-
-    let test = tip_wallet.wallet().rpc_api().get_info().await?;
+    let test: spectre_wrpc_client::prelude::GetInfoResponse =
+        tip_wallet.wallet().rpc_api().get_info().await?;
     println!("{:?}", test);
+
+    // balance is not yet populated (for now) for unknown reasons
+    let t2 = account.utxo_context().update_balance().await?;
+
+    println!("{:?}", t2.clone());
 
     let (summary, hashes) = account
         .send(
             outputs.into(),
-            i64::from(10000).into(),
+            i64::from(0).into(),
             None,
             wallet_secret,
             None,
