@@ -3,16 +3,17 @@ use std::{
     sync::{Arc, RwLock},
 };
 
-use spectre_wallet_core::{storage::Interface, wallet::Wallet};
-use spectre_wrpc_client::{prelude::NetworkId, Resolver};
+use spectre_wallet_core::{rpc::RpcApi, storage::Interface, wallet::Wallet};
+use spectre_wrpc_client::{prelude::NetworkId, Resolver, SpectreRpcClient};
 
-use crate::{result::Result, tip_wallet::TipOwnedWallet};
+use crate::{result::Result, tip_owned_wallet::TipOwnedWallet};
 
 pub struct TipContext {
     resolver: Resolver,
     network_id: NetworkId,
     opened_wallet: RwLock<HashMap<String, TipOwnedWallet>>,
     forced_node_url: Option<String>,
+    wrpc_client: Arc<SpectreRpcClient>,
 }
 
 impl TipContext {
@@ -20,11 +21,13 @@ impl TipContext {
         resolver: Resolver,
         network_id: NetworkId,
         forced_node_url: Option<String>,
+        wrpc_client: Arc<SpectreRpcClient>,
     ) -> Arc<Self> {
         Arc::new(TipContext {
             network_id,
             resolver,
             forced_node_url,
+            wrpc_client,
             opened_wallet: RwLock::new(HashMap::new()),
         })
     }
@@ -70,9 +73,9 @@ impl TipContext {
      */
     pub fn remove_opened_wallet(&self, identifier: &str) -> Option<TipOwnedWallet> {
         let mut lock = self.opened_wallet.write().unwrap();
-        let tip_wallet = lock.remove(identifier);
+        let tip_wallet_result = lock.remove(identifier);
 
-        tip_wallet
+        tip_wallet_result
     }
 
     /*
@@ -84,5 +87,9 @@ impl TipContext {
 
     pub fn forced_node_url(&self) -> Option<String> {
         self.forced_node_url.clone()
+    }
+
+    pub fn rpc_api(&self) -> Arc<dyn RpcApi> {
+        self.wrpc_client.clone()
     }
 }

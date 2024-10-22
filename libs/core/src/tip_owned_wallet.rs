@@ -1,13 +1,11 @@
-use std::{
-    sync::Arc,
-    time::{self, SystemTime},
-};
+use std::{sync::Arc, time::SystemTime};
 
 use crate::result::Result;
 use crate::tip_context::TipContext;
 use spectre_addresses::Address;
 use spectre_wallet_core::{
     prelude::{EncryptionKind, Language, Mnemonic, WordCount},
+    rpc::{Rpc, RpcCtl},
     storage::PrvKeyData,
     wallet::{AccountCreateArgsBip32, Wallet, WalletCreateArgs, WalletOpenArgs},
 };
@@ -86,10 +84,13 @@ impl TipOwnedWallet {
 
         wallet_arc.activate_accounts(None).await?;
 
-        let tip_owned_wallet = tip_context.add_opened_wallet(
-            owned_identifier.into(),
-            TipOwnedWallet::new(owned_identifier.into(), wallet_arc, receive_address),
-        );
+        wallet_arc.autoselect_default_account_if_single().await?;
+
+        let tip_wallet = TipOwnedWallet::new(owned_identifier.into(), wallet_arc, receive_address);
+
+        tip_wallet.bind_rpc(&tip_context).await?;
+
+        let tip_owned_wallet = tip_context.add_opened_wallet(owned_identifier.into(), tip_wallet);
 
         return Ok((tip_owned_wallet, mnemonic));
     }
@@ -112,16 +113,18 @@ impl TipOwnedWallet {
         wallet_arc
             .open(&wallet_secret, Some(owned_identifier.into()), args)
             .await?;
+
         wallet_arc.activate_accounts(None).await?;
 
         wallet_arc.autoselect_default_account_if_single().await?;
 
         let receive_address = wallet_arc.account()?.receive_address()?;
 
-        let tip_owned_wallet = tip_context.add_opened_wallet(
-            owned_identifier.into(),
-            TipOwnedWallet::new(owned_identifier.into(), wallet_arc, receive_address),
-        );
+        let tip_wallet = TipOwnedWallet::new(owned_identifier.into(), wallet_arc, receive_address);
+
+        tip_wallet.bind_rpc(&tip_context).await?;
+
+        let tip_owned_wallet = tip_context.add_opened_wallet(owned_identifier.into(), tip_wallet);
 
         return Ok(tip_owned_wallet);
     }
@@ -184,11 +187,15 @@ impl TipOwnedWallet {
         wallet_arc.store().flush(&wallet_secret).await?;
 
         wallet_arc.activate_accounts(None).await?;
+        wallet_arc.autoselect_default_account_if_single().await?;
 
-        let tip_owned_wallet = tip_context.add_opened_wallet(
-            owned_identifier.into(),
-            TipOwnedWallet::new(owned_identifier.into(), wallet_arc, receive_address),
-        );
+        let tip_owned_wallet =
+            TipOwnedWallet::new(owned_identifier.into(), wallet_arc, receive_address);
+
+        tip_owned_wallet.bind_rpc(&tip_context).await?;
+
+        let tip_owned_wallet =
+            tip_context.add_opened_wallet(owned_identifier.into(), tip_owned_wallet);
 
         return Ok(tip_owned_wallet);
     }
@@ -203,6 +210,27 @@ impl TipOwnedWallet {
 
     pub fn receive_address(&self) -> Address {
         self.receive_address.clone()
+    }
+
+    async fn bind_rpc(&self, tip_context: &Arc<TipContext>) -> Result<&Self> {
+        // bind context rpc into wallet
+        let ctl = RpcCtl::new();
+
+        let rpc = Rpc::new(tip_context.rpc_api(), ctl);
+
+        self.wallet.bind_rpc(Some(rpc)).await?;
+
+        // initiate utxo processor and load initiate account balance
+        self.wallet
+            .account()?
+            .utxo_context()
+            .processor()
+            .handle_connect()
+            .await?;
+
+        self.wallet.account()?.scan(None, None).await?;
+
+        Ok(self)
     }
 }
 

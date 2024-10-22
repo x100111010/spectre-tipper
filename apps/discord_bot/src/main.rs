@@ -1,23 +1,23 @@
 use std::{env, str::FromStr, sync::Arc};
 
 use core::{
-    error::Error as SpectreError, tip_context::TipContext, tip_wallet::TipOwnedWallet,
+    error::Error as SpectreError, tip_context::TipContext, tip_owned_wallet::TipOwnedWallet,
     utils::try_parse_required_nonzero_spectre_as_sompi_u64,
 };
 use poise::{
     serenity_prelude::{self as serenity, Colour, CreateEmbed},
     CreateReply, Modal,
 };
-use spectre_addresses::{Address, Prefix, Version};
+use spectre_addresses::Address;
+
 use spectre_wallet_core::{
-    api::WalletApi,
     prelude::{Language, Mnemonic},
-    rpc::{ConnectOptions, Rpc, RpcApi, RpcCtl},
-    tx::{Fees, PaymentDestination, PaymentOutputs},
+    rpc::ConnectOptions,
+    tx::PaymentOutputs,
+    wallet::Wallet,
 };
 use spectre_wallet_keys::secret::Secret;
 use spectre_wrpc_client::{prelude::NetworkId, Resolver, SpectreRpcClient, WrpcEncoding};
-use spectre_wrpc_wasm::{IConnectOptions, RpcClient, RpcConfig};
 use workflow_core::abortable::Abortable;
 
 type Error = Box<dyn std::error::Error + Send + Sync>;
@@ -28,7 +28,9 @@ type Context<'a> = poise::ApplicationContext<'a, Arc<TipContext>, Error>;
 
 #[poise::command(
     slash_command,
-    subcommands("create", "open", "restore", "status", "destroy", "send"),
+    subcommands(
+        "create", "open", "close", "restore", "status", "destroy", "send", "debug"
+    ),
     category = "wallet"
 )]
 /// Main command for interracting with the discord wallet
@@ -176,6 +178,29 @@ async fn open(
 }
 
 #[poise::command(slash_command, category = "wallet")]
+/// close the opened discord wallet
+async fn close(ctx: Context<'_>) -> Result<(), Error> {
+    let tip_context = ctx.data;
+
+    let user = ctx.author().id;
+    let wallet_owner_identifier = user.to_string();
+
+    let is_opened = tip_context.does_open_wallet_exists(&wallet_owner_identifier);
+
+    if is_opened {
+        let tip_wallet_result = tip_context.remove_opened_wallet(&wallet_owner_identifier);
+
+        if let Some(tip_wallet) = tip_wallet_result {
+            tip_wallet.wallet().close().await?;
+        }
+    }
+
+    ctx.say(format!("wallet closed")).await?;
+
+    Ok(())
+}
+
+#[poise::command(slash_command, category = "wallet")]
 /// get the status of your discord wallet
 async fn status(ctx: Context<'_>) -> Result<(), Error> {
     let user = ctx.author().id;
@@ -197,6 +222,38 @@ async fn status(ctx: Context<'_>) -> Result<(), Error> {
     ctx.say(format!(
         "is opened: {}\nis_initiated{}",
         is_opened, is_initiated
+    ))
+    .await?;
+
+    Ok(())
+}
+
+#[poise::command(slash_command, category = "wallet")]
+/// dev cmd
+async fn debug(ctx: Context<'_>) -> Result<(), Error> {
+    let user = ctx.author().id;
+    let wallet_owner_identifier = user.to_string();
+
+    let tip_context = ctx.data();
+
+    let is_opened = tip_context.does_open_wallet_exists(&wallet_owner_identifier);
+    let is_initiated = match is_opened {
+        true => true,
+        false => {
+            tip_context
+                .local_store()?
+                .exists(Some(&wallet_owner_identifier))
+                .await?
+        }
+    };
+
+    let wallet = Arc::new(Wallet::try_new(Wallet::local_store()?, None, None)?);
+
+    let descriptors = wallet.account_descriptors().await?;
+
+    ctx.say(format!(
+        "is opened: {}\nis_initiated{}\n{:?}",
+        is_opened, is_initiated, descriptors
     ))
     .await?;
 
@@ -376,41 +433,7 @@ async fn send(
         }
     };
 
-    // TODO: get url from resolver is not compatible with url from wallet connect
-    // let url = tip_context
-    //     .resolver()
-    //     .get_url(WrpcEncoding::Borsh, tip_context.network_id())
-    //     .await?;
-
-    // for now use the forced url variable, but this should not be used for production
-    let forced_node_url = tip_context.forced_node_url();
-
-    // tip_wallet
-    //     .wallet()
-    //     .connect(forced_node_url.clone(), tip_context.network_id())
-    //     .await?;
-
-    let wrpc_client = Arc::new(SpectreRpcClient::new(
-        WrpcEncoding::Borsh,
-        Some(&forced_node_url.unwrap()),
-        None,
-        Some(tip_context.network_id()),
-        None,
-    )?);
-
-    wrpc_client
-        .connect(Some(ConnectOptions {
-            block_async_connect: true,
-            ..Default::default()
-        }))
-        .await?;
-
-    let rpc_ctl = RpcCtl::new();
-
-    let rpc = Rpc::new(wrpc_client, rpc_ctl);
-
-    tip_wallet.wallet().bind_rpc(Some(rpc)).await?;
-    tip_wallet.wallet().start().await?;
+    let wallet = tip_wallet.wallet();
 
     let address = Address::constructor(
         "spectretest:qplc746exga4erlhakrhlanhq5yef8e4qfffaledagmpj0kel99vzfkqe4f3w",
@@ -420,22 +443,13 @@ async fn send(
 
     println!("amount sompi {}", amount_sompi);
 
-    let outputs = PaymentOutputs::from((address, 1000));
+    let outputs = PaymentOutputs::from((address, amount_sompi));
 
     let abortable = Abortable::default();
 
     let wallet_secret = Secret::from(secret);
 
-    let account = tip_wallet.wallet().account()?;
-
-    let test: spectre_wrpc_client::prelude::GetInfoResponse =
-        tip_wallet.wallet().rpc_api().get_info().await?;
-    println!("{:?}", test);
-
-    // balance is not yet populated (for now) for unknown reasons
-    let t2 = account.utxo_context().update_balance().await?;
-
-    println!("{:?}", t2.clone());
+    let account = wallet.account()?;
 
     let (summary, hashes) = account
         .send(
@@ -480,10 +494,33 @@ async fn main() {
         _ => Resolver::default(),
     };
 
+    let network_id = NetworkId::from_str(&spectre_network_str).unwrap();
+
+    let wrpc_client = Arc::new(
+        SpectreRpcClient::new(
+            WrpcEncoding::Borsh,
+            forced_spectre_node.as_deref(),
+            Some(resolver.clone()),
+            Some(network_id.clone()),
+            None,
+        )
+        .unwrap(),
+    );
+
+    wrpc_client
+        .connect(Some(ConnectOptions {
+            url: forced_spectre_node.clone(),
+            block_async_connect: true,
+            ..Default::default()
+        }))
+        .await
+        .unwrap();
+
     let tip_context = TipContext::new_arc(
         resolver,
         NetworkId::from_str(&spectre_network_str).unwrap(),
         forced_spectre_node,
+        wrpc_client,
     );
 
     let framework = poise::Framework::builder()
