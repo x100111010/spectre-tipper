@@ -1,35 +1,57 @@
 use std::{
     collections::HashMap,
+    path::PathBuf,
     sync::{Arc, RwLock},
 };
 
 use spectre_wallet_core::{rpc::RpcApi, storage::Interface, wallet::Wallet};
 use spectre_wrpc_client::{prelude::NetworkId, Resolver, SpectreRpcClient};
 
-use crate::{result::Result, tip_owned_wallet::TipOwnedWallet};
+use crate::{
+    owned_wallet_metadata::OwnedWalletMetadataStore, result::Result,
+    tip_owned_wallet::TipOwnedWallet, transition_wallet_metadata::TransitionWalletMetadataStore,
+};
 
 pub struct TipContext {
     resolver: Resolver,
     network_id: NetworkId,
-    opened_wallet: RwLock<HashMap<String, TipOwnedWallet>>,
+    opened_owned_wallets: RwLock<HashMap<String, TipOwnedWallet>>,
+    pub transition_wallet_metadata_store: TransitionWalletMetadataStore,
+    pub owned_wallet_metadata_store: OwnedWalletMetadataStore,
     forced_node_url: Option<String>,
     wrpc_client: Arc<SpectreRpcClient>,
 }
 
 impl TipContext {
-    pub fn new_arc(
+    pub fn try_new_arc(
         resolver: Resolver,
         network_id: NetworkId,
         forced_node_url: Option<String>,
         wrpc_client: Arc<SpectreRpcClient>,
-    ) -> Arc<Self> {
-        Arc::new(TipContext {
+        wallet_data_path_buf: PathBuf,
+    ) -> Result<Arc<Self>> {
+        let transition_wallet_metadata_path_buf =
+            wallet_data_path_buf.clone().join("transitions.json");
+        let owned_wallet_metadata_path_buf = wallet_data_path_buf.clone().join("owned.json");
+
+        println!("{}", owned_wallet_metadata_path_buf.to_str().unwrap());
+        println!("{}", transition_wallet_metadata_path_buf.to_str().unwrap());
+
+        let transition_wallet_metadata_store =
+            TransitionWalletMetadataStore::new(&transition_wallet_metadata_path_buf)?;
+
+        let owned_wallet_metadata_store =
+            OwnedWalletMetadataStore::new(&owned_wallet_metadata_path_buf)?;
+
+        Ok(Arc::new(TipContext {
             network_id,
             resolver,
             forced_node_url,
             wrpc_client,
-            opened_wallet: RwLock::new(HashMap::new()),
-        })
+            opened_owned_wallets: RwLock::new(HashMap::new()),
+            transition_wallet_metadata_store,
+            owned_wallet_metadata_store,
+        }))
     }
 
     pub fn network_id(&self) -> NetworkId {
@@ -40,12 +62,12 @@ impl TipContext {
         self.resolver.clone()
     }
 
-    pub fn get_opened_wallet_rw_lock(&self) -> &RwLock<HashMap<String, TipOwnedWallet>> {
-        return &self.opened_wallet;
+    pub fn get_opened_owned_wallet_rw_lock(&self) -> &RwLock<HashMap<String, TipOwnedWallet>> {
+        return &self.opened_owned_wallets;
     }
 
-    pub fn does_open_wallet_exists(&self, identifier: &str) -> bool {
-        let read_lock = self.opened_wallet.read().unwrap();
+    pub fn does_opened_owned_wallet_exists(&self, identifier: &str) -> bool {
+        let read_lock = self.opened_owned_wallets.read().unwrap();
 
         read_lock.contains_key(identifier)
     }
@@ -53,16 +75,20 @@ impl TipContext {
     /**
      * return a cloned version of the wallet, if found
      */
-    pub fn get_open_wallet_arc(&self, identifier: &str) -> Option<TipOwnedWallet> {
-        let read_lock = self.opened_wallet.read().unwrap();
+    pub fn get_opened_owned_wallet(&self, identifier: &str) -> Option<TipOwnedWallet> {
+        let read_lock = self.opened_owned_wallets.read().unwrap();
 
         let wallet_result = read_lock.get(identifier);
 
         wallet_result.cloned()
     }
 
-    pub fn add_opened_wallet(&self, identifier: String, wallet: TipOwnedWallet) -> TipOwnedWallet {
-        let mut lock = self.opened_wallet.write().unwrap();
+    pub fn add_opened_owned_wallet(
+        &self,
+        identifier: String,
+        wallet: TipOwnedWallet,
+    ) -> TipOwnedWallet {
+        let mut lock = self.opened_owned_wallets.write().unwrap();
         lock.insert(identifier, wallet.clone());
 
         return wallet;
@@ -71,8 +97,8 @@ impl TipContext {
     /*
      * closing the wallet has to be done externally
      */
-    pub fn remove_opened_wallet(&self, identifier: &str) -> Option<TipOwnedWallet> {
-        let mut lock = self.opened_wallet.write().unwrap();
+    pub fn remove_opened_owned_wallet(&self, identifier: &str) -> Option<TipOwnedWallet> {
+        let mut lock = self.opened_owned_wallets.write().unwrap();
         let tip_wallet_result = lock.remove(identifier);
 
         tip_wallet_result

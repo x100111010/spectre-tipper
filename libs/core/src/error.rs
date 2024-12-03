@@ -10,6 +10,21 @@ pub enum Error {
 
     #[error(transparent)]
     WalletError(#[from] spectre_wallet_core::error::Error),
+
+    #[error(transparent)]
+    StdIoError(#[from] std::io::Error),
+
+    #[error(transparent)]
+    SerdeError(#[from] serde_json::Error),
+
+    #[error("Transition Wallet Already Exists")]
+    TransitionWalletAlreadyExists(),
+
+    #[error("Owned Wallet Already Exists")]
+    OwnedWalletAlreadyExists(),
+
+    #[error("Owned Wallet Not Found")]
+    OwnedWalletNotFound(),
 }
 
 impl Error {

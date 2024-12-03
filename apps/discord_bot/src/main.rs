@@ -1,9 +1,19 @@
-use std::{env, str::FromStr, sync::Arc};
+use std::{
+    env,
+    ffi::{OsStr, OsString},
+    path::Path,
+    str::FromStr,
+    sync::Arc,
+};
 
 use core::{
-    error::Error as SpectreError, tip_context::TipContext, tip_owned_wallet::TipOwnedWallet,
+    error::Error as SpectreError,
+    tip_context::{self, TipContext},
+    tip_owned_wallet::TipOwnedWallet,
+    tip_transition_wallet::TipTransitionWallet,
     utils::try_parse_required_nonzero_spectre_as_sompi_u64,
 };
+use directories::BaseDirs;
 use poise::{
     serenity_prelude::{self as serenity, Colour, CreateEmbed},
     CreateReply, Modal,
@@ -69,7 +79,7 @@ async fn create(
 
     let tip_context = ctx.data();
 
-    let is_opened = tip_context.does_open_wallet_exists(&wallet_owner_identifier);
+    let is_opened = tip_context.does_opened_owned_wallet_exists(&wallet_owner_identifier);
     let is_initiated = match is_opened {
         true => true,
         false => {
@@ -137,7 +147,7 @@ async fn open(
     let tip_context = ctx.data();
 
     // already opened
-    if let Some(wallet) = tip_context.get_open_wallet_arc(&wallet_owner_identifier) {
+    if let Some(wallet) = tip_context.get_opened_owned_wallet(&wallet_owner_identifier) {
         ctx.say(format!("{}", wallet.receive_address())).await?;
 
         return Ok(());
@@ -185,10 +195,10 @@ async fn close(ctx: Context<'_>) -> Result<(), Error> {
     let user = ctx.author().id;
     let wallet_owner_identifier = user.to_string();
 
-    let is_opened = tip_context.does_open_wallet_exists(&wallet_owner_identifier);
+    let is_opened = tip_context.does_opened_owned_wallet_exists(&wallet_owner_identifier);
 
     if is_opened {
-        let tip_wallet_result = tip_context.remove_opened_wallet(&wallet_owner_identifier);
+        let tip_wallet_result = tip_context.remove_opened_owned_wallet(&wallet_owner_identifier);
 
         if let Some(tip_wallet) = tip_wallet_result {
             tip_wallet.wallet().close().await?;
@@ -208,7 +218,7 @@ async fn status(ctx: Context<'_>) -> Result<(), Error> {
 
     let tip_context = ctx.data();
 
-    let is_opened = tip_context.does_open_wallet_exists(&wallet_owner_identifier);
+    let is_opened = tip_context.does_opened_owned_wallet_exists(&wallet_owner_identifier);
     let is_initiated = match is_opened {
         true => true,
         false => {
@@ -236,7 +246,7 @@ async fn debug(ctx: Context<'_>) -> Result<(), Error> {
 
     let tip_context = ctx.data();
 
-    let is_opened = tip_context.does_open_wallet_exists(&wallet_owner_identifier);
+    let is_opened = tip_context.does_opened_owned_wallet_exists(&wallet_owner_identifier);
     let is_initiated = match is_opened {
         true => true,
         false => {
@@ -275,7 +285,7 @@ async fn destroy(ctx: Context<'_>) -> Result<(), Error> {
 
     let tip_context = ctx.data();
 
-    let is_opened = tip_context.does_open_wallet_exists(&wallet_owner_identifier);
+    let is_opened = tip_context.does_opened_owned_wallet_exists(&wallet_owner_identifier);
     let is_initiated = match is_opened {
         true => true,
         false => {
@@ -300,7 +310,8 @@ async fn destroy(ctx: Context<'_>) -> Result<(), Error> {
     if let Some(data) = result {
         if data.first_input == "destroy" {
             if is_opened {
-                let tip_wallet_result = tip_context.remove_opened_wallet(&wallet_owner_identifier);
+                let tip_wallet_result =
+                    tip_context.remove_opened_owned_wallet(&wallet_owner_identifier);
 
                 if let Some(tip_wallet) = tip_wallet_result {
                     tip_wallet.wallet().close().await?;
@@ -395,8 +406,18 @@ async fn send(
     #[description = "Amount"] amount: String,
     #[description = "Wallet Secret"] secret: String,
 ) -> Result<(), Error> {
-    let u = user;
-    let response = format!("{}'s account was created at {}", u.name, u.created_at());
+    if user.bot || user.system {
+        ctx.say("user is a bot or a system user").await?;
+        return Ok(());
+    }
+
+    let recipiant_identifier = user.id.to_string();
+
+    let response = format!(
+        "{}'s account was created at {}",
+        user.name,
+        user.created_at()
+    );
     ctx.say(response).await?;
 
     let author = ctx.author().id;
@@ -404,7 +425,7 @@ async fn send(
 
     let tip_context = ctx.data();
 
-    let is_opened = tip_context.does_open_wallet_exists(&wallet_owner_identifier);
+    let is_opened = tip_context.does_opened_owned_wallet_exists(&wallet_owner_identifier);
     let is_initiated = match is_opened {
         true => true,
         false => {
@@ -425,7 +446,7 @@ async fn send(
         return Ok(());
     }
 
-    let tip_wallet = match tip_context.get_open_wallet_arc(&wallet_owner_identifier) {
+    let tip_wallet = match tip_context.get_opened_owned_wallet(&wallet_owner_identifier) {
         Some(w) => w,
         None => {
             ctx.say("unexpected error: wallet not opened").await?;
@@ -435,9 +456,42 @@ async fn send(
 
     let wallet = tip_wallet.wallet();
 
-    let address = Address::constructor(
-        "spectretest:qplc746exga4erlhakrhlanhq5yef8e4qfffaledagmpj0kel99vzfkqe4f3w",
-    );
+    // find address of recipiant or create a temporary wallet
+    let existing_owned_wallet = tip_context
+        .owned_wallet_metadata_store
+        .find_owned_wallet_metadata_by_owner_identifier(&recipiant_identifier)
+        .await;
+
+    let recipiant_address = match existing_owned_wallet {
+        Ok(wallet) => wallet.receive_address,
+        Err(SpectreError::OwnedWalletNotFound()) => {
+            // find or create a temporary wallet
+            let transition_wallet_result = tip_context
+                .transition_wallet_metadata_store
+                .find_transition_wallet_metadata_for_identifier_couple(
+                    &author.to_string(),
+                    &recipiant_identifier,
+                )
+                .await?;
+
+            match transition_wallet_result {
+                Some(wallet) => wallet.receive_address,
+                None => TipTransitionWallet::create(
+                    tip_context.clone(),
+                    &author.to_string(),
+                    &recipiant_identifier,
+                )
+                .await?
+                .receive_address(),
+            }
+        }
+        Err(e) => {
+            ctx.say(format!("Error: {:}", e)).await?;
+            return Ok(());
+        }
+    };
+
+    let address = recipiant_address;
 
     let amount_sompi = try_parse_required_nonzero_spectre_as_sompi_u64(Some(amount))?;
 
@@ -474,6 +528,7 @@ async fn send(
 
 #[tokio::main]
 async fn main() {
+    // env
     dotenvy::dotenv().unwrap();
 
     let discord_token = match env::var("DISCORD_TOKEN") {
@@ -484,6 +539,10 @@ async fn main() {
     let spectre_network_str =
         env::var("SPECTRE_NETWORK").expect("SPECTRE_NETWORK environment variable is missing");
 
+    let wallet_data_path_str =
+        env::var("WALLET_DATA_PATH").expect("WALLET_DATA_PATH environment variable is missing");
+
+    // RPC
     let forced_spectre_node: Option<String> = match env::var("FORCE_SPECTRE_NODE_ADDRESS") {
         Ok(v) => Some(v),
         Err(_) => None,
@@ -516,13 +575,25 @@ async fn main() {
         .await
         .unwrap();
 
-    let tip_context = TipContext::new_arc(
+    // @TODO(@izio): create the folder if it doesn't exists, on first run it crash otherwise
+    let wallet_data_path_buf = BaseDirs::new()
+        .unwrap()
+        .data_dir()
+        .join(wallet_data_path_str.clone());
+
+    let tip_context = TipContext::try_new_arc(
         resolver,
         NetworkId::from_str(&spectre_network_str).unwrap(),
         forced_spectre_node,
         wrpc_client,
+        wallet_data_path_buf,
     );
 
+    if let Err(e) = tip_context {
+        panic!("{}", format!("Error while building tip context: {}", e));
+    }
+
+    // discord
     let framework = poise::Framework::builder()
         .options(poise::FrameworkOptions {
             commands: vec![wallet()],
@@ -531,7 +602,7 @@ async fn main() {
         .setup(|ctx, _ready, framework| {
             Box::pin(async move {
                 poise::builtins::register_globally(ctx, &framework.options().commands).await?;
-                Ok(tip_context)
+                Ok(tip_context.unwrap())
             })
         })
         .build();

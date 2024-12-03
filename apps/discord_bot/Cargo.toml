@@ -16,3 +16,4 @@ spectre-wrpc-wasm = { git = "https://github.com/spectre-project/rusty-spectre.gi
 workflow-core = { version = "0.12.1" }
 futures = "0.3.31"
 dotenvy = "0.15.7"
+directories = "5.0.1"

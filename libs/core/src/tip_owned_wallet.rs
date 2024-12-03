@@ -1,7 +1,7 @@
 use std::{sync::Arc, time::SystemTime};
 
-use crate::result::Result;
 use crate::tip_context::TipContext;
+use crate::{owned_wallet_metadata::OwnedWalletMetadata, result::Result};
 use spectre_addresses::Address;
 use spectre_wallet_core::{
     prelude::{EncryptionKind, Language, Mnemonic, WordCount},
@@ -90,7 +90,16 @@ impl TipOwnedWallet {
 
         tip_wallet.bind_rpc(&tip_context).await?;
 
-        let tip_owned_wallet = tip_context.add_opened_wallet(owned_identifier.into(), tip_wallet);
+        tip_context
+            .owned_wallet_metadata_store
+            .add(&OwnedWalletMetadata::new(
+                owned_identifier.into(),
+                tip_wallet.receive_address(),
+            ))
+            .await?;
+
+        let tip_owned_wallet =
+            tip_context.add_opened_owned_wallet(owned_identifier.into(), tip_wallet);
 
         return Ok((tip_owned_wallet, mnemonic));
     }
@@ -124,7 +133,8 @@ impl TipOwnedWallet {
 
         tip_wallet.bind_rpc(&tip_context).await?;
 
-        let tip_owned_wallet = tip_context.add_opened_wallet(owned_identifier.into(), tip_wallet);
+        let tip_owned_wallet =
+            tip_context.add_opened_owned_wallet(owned_identifier.into(), tip_wallet);
 
         return Ok(tip_owned_wallet);
     }
@@ -194,8 +204,21 @@ impl TipOwnedWallet {
 
         tip_owned_wallet.bind_rpc(&tip_context).await?;
 
+        tip_context
+            .owned_wallet_metadata_store
+            .remove_by_owner_identifier(owned_identifier.into())
+            .await?;
+
+        tip_context
+            .owned_wallet_metadata_store
+            .add(&OwnedWalletMetadata::new(
+                owned_identifier.into(),
+                tip_owned_wallet.receive_address(),
+            ))
+            .await?;
+
         let tip_owned_wallet =
-            tip_context.add_opened_wallet(owned_identifier.into(), tip_owned_wallet);
+            tip_context.add_opened_owned_wallet(owned_identifier.into(), tip_owned_wallet);
 
         return Ok(tip_owned_wallet);
     }
