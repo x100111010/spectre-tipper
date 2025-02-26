@@ -46,7 +46,7 @@ impl TipTransitionWallet {
 
         let wallet_secret = Secret::from(secret_str.clone());
         let wallet_identifier =
-            format!("transition_{}_{}", target_identifier, initiator_identifier);
+            format!("transition-{}-{}", target_identifier, initiator_identifier);
 
         let mnemonic = Mnemonic::random(WordCount::Words12, Language::default())?;
         let localstore = Wallet::local_store()?;
@@ -132,7 +132,7 @@ impl TipTransitionWallet {
         let localstore = Wallet::local_store()?;
 
         let wallet_identifier =
-            format!("transition_{}_{}", target_identifier, initiator_identifier);
+            format!("transition-{}-{}", target_identifier, initiator_identifier);
 
         let wallet = Wallet::try_new(
             localstore,

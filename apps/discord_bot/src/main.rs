@@ -1,29 +1,21 @@
-use std::{
-    env,
-    ffi::{OsStr, OsString},
-    path::Path,
-    str::FromStr,
-    sync::Arc,
-};
+use std::{env, str::FromStr, sync::Arc};
 
 use core::{
-    error::Error as SpectreError,
-    tip_context::{self, TipContext},
-    tip_owned_wallet::TipOwnedWallet,
+    error::Error as SpectreError, tip_context::TipContext, tip_owned_wallet::TipOwnedWallet,
     tip_transition_wallet::TipTransitionWallet,
     utils::try_parse_required_nonzero_spectre_as_sompi_u64,
 };
 use directories::BaseDirs;
+use futures::future::join_all;
 use poise::{
     serenity_prelude::{self as serenity, Colour, CreateEmbed},
     CreateReply, Modal,
 };
-use spectre_addresses::Address;
 
 use spectre_wallet_core::{
     prelude::{Language, Mnemonic},
     rpc::ConnectOptions,
-    tx::PaymentOutputs,
+    tx::{Fees, PaymentOutputs},
     wallet::Wallet,
 };
 use spectre_wallet_keys::secret::Secret;
@@ -229,9 +221,63 @@ async fn status(ctx: Context<'_>) -> Result<(), Error> {
         }
     };
 
+    let balance: u64 = {
+        let mut b: u64 = 0;
+        if let Some(owned_wallet) = tip_context.get_opened_owned_wallet(&wallet_owner_identifier) {
+            if let Ok(account) = owned_wallet.wallet().account() {
+                if let Some(balance) = account.balance() {
+                    b = balance.mature;
+                }
+            }
+        }
+        b
+    };
+
+    let transition_wallets = tip_context
+        .transition_wallet_metadata_store
+        .find_transition_wallet_metadata_by_target_identifier(&wallet_owner_identifier)
+        .await?;
+
+    let pending_transition_balance = join_all(transition_wallets.iter().map(|metadata| async {
+        let secret = Secret::from(metadata.secret.clone());
+        let transition_wallet = TipTransitionWallet::open(
+            tip_context.clone(),
+            &secret,
+            &metadata.initiator_identifier,
+            &metadata.target_identifier,
+        )
+        .await;
+
+        let balance: u64 = match transition_wallet {
+            Ok(tw) => {
+                let account_result = tw.wallet().account();
+                let mut b = 0;
+                if let Ok(account) = account_result {
+                    if let Some(balance) = account.balance() {
+                        b = balance.mature
+                    }
+                }
+
+                b
+            }
+            Err(e) => {
+                println!("warning: {:?}", e);
+
+                0 as u64
+            }
+        };
+
+        return balance;
+    }))
+    .await
+    .into_iter()
+    .reduce(|a, b| a + b);
+
+    // wallet needs to be opened in order to display its balance
+    // else it display 0
     ctx.say(format!(
-        "is opened: {}\nis_initiated{}",
-        is_opened, is_initiated
+        "is opened: {}\nis_initiated: {}\nbalance: {}\npending transition balance: {:?}",
+        is_opened, is_initiated, balance, pending_transition_balance
     ))
     .await?;
 
@@ -257,13 +303,115 @@ async fn debug(ctx: Context<'_>) -> Result<(), Error> {
         }
     };
 
-    let wallet = Arc::new(Wallet::try_new(Wallet::local_store()?, None, None)?);
+    if !is_opened && !is_initiated {
+        ctx.say(format!(
+            "is opened: {}\nis_initiated{}",
+            is_opened, is_initiated
+        ))
+        .await?;
 
-    let descriptors = wallet.account_descriptors().await?;
+        return Ok(());
+    }
+
+    let tip_wallet = match tip_context.get_opened_owned_wallet(&wallet_owner_identifier) {
+        Some(w) => w,
+        None => {
+            ctx.say("unexpected error: wallet not opened").await?;
+            return Ok(());
+        }
+    };
+
+    let wallet = tip_wallet.wallet();
+    let tipee_receive_address = wallet.account().unwrap().receive_address().unwrap();
 
     ctx.say(format!(
-        "is opened: {}\nis_initiated{}\n{:?}",
-        is_opened, is_initiated, descriptors
+        "tipee receive address: {}",
+        tipee_receive_address.address_to_string()
+    ))
+    .await?;
+
+    // let wallet = Arc::new(Wallet::try_new(Wallet::local_store()?, None, None)?);
+
+    // let descriptors = wallet.account_descriptors().await?;
+
+    let transition_wallets = tip_context
+        .transition_wallet_metadata_store
+        .find_transition_wallet_metadata_by_target_identifier(&wallet_owner_identifier)
+        .await?;
+
+    join_all(transition_wallets.iter().map(|metadata| async {
+        let secret = Secret::from(metadata.secret.clone());
+        let transition_wallet = TipTransitionWallet::open(
+            tip_context.clone(),
+            &secret,
+            &metadata.initiator_identifier,
+            &metadata.target_identifier,
+        )
+        .await;
+
+        match transition_wallet {
+            Ok(tw) => {
+                let account_result = tw.wallet().account();
+                if let Ok(account) = account_result {
+                    if let Some(balance) = account.balance() {
+                        let receive_address = tipee_receive_address.clone();
+
+                        println!(
+                            "sending {} SPR from {} to {}",
+                            balance.mature,
+                            account.receive_address().unwrap().address_to_string(),
+                            tipee_receive_address.address_to_string()
+                        );
+
+                        let address = receive_address;
+
+                        let amount_sompi = balance.mature;
+                        // 10_000 is arbitrary and could/should be estimated before hand
+                        // https://kaspa-mdbook.aspectron.com/transactions/constraints/fees.html
+                        let amount_minus_gas_fee = amount_sompi - 10000;
+
+                        println!(
+                            "amount sompi {}, with gas fee {}",
+                            amount_sompi, amount_minus_gas_fee
+                        );
+
+                        let outputs = PaymentOutputs::from((address, amount_minus_gas_fee));
+
+                        let abortable = Abortable::default();
+
+                        let wallet_secret = Secret::from(secret);
+
+                        let (summary, hashes) = account
+                            .send(
+                                outputs.into(),
+                                Fees::SenderPays(0),
+                                None,
+                                wallet_secret,
+                                None,
+                                &abortable,
+                                Some(Arc::new(
+                                    move |ptx: &spectre_wallet_core::tx::PendingTransaction| {
+                                        println!("tx notifier: {:?}", ptx);
+                                    },
+                                )),
+                            )
+                            .await
+                            .unwrap();
+
+                        println!("summary {:?}, hashes: {:?}", summary, hashes);
+                    }
+                }
+            }
+            Err(e) => {
+                println!("warning: {:?}", e);
+            }
+        };
+    }))
+    .await;
+
+    ctx.say(format!(
+        "is opened: {}\nis_initiated{}",
+        is_opened, is_initiated
     ))
     .await?;
 
@@ -468,7 +616,7 @@ async fn send(
             // find or create a temporary wallet
             let transition_wallet_result = tip_context
                 .transition_wallet_metadata_store
-                .find_transition_wallet_metadata_for_identifier_couple(
+                .find_transition_wallet_metadata_by_identifier_couple(
                     &author.to_string(),
                     &recipiant_identifier,
                 )

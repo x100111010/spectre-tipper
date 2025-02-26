@@ -16,7 +16,8 @@ pub struct TransitionWalletMetadata {
     pub target_identifier: String,
     pub initiator_identifier: String,
     pub receive_address: Address,
-    secret: String,
+    // @TODO(izio): maybe hide this
+    pub secret: String,
 }
 
 impl TransitionWalletMetadata {
@@ -87,7 +88,7 @@ impl TransitionWalletMetadataStore {
         return Ok(());
     }
 
-    pub async fn find_transition_wallet_metadata_for_recipiant(
+    pub async fn find_transition_wallet_metadata_by_recipiant(
         &self,
         recipiant: Address,
     ) -> Result<Vec<TransitionWalletMetadata>> {
@@ -101,7 +102,21 @@ impl TransitionWalletMetadataStore {
         return Ok(metadata);
     }
 
-    pub async fn find_transition_wallet_metadata_for_identifier_couple(
+    pub async fn find_transition_wallet_metadata_by_target_identifier(
+        &self,
+        target_identifier: &str,
+    ) -> Result<Vec<TransitionWalletMetadata>> {
+        let all_metadata = self.metadata.read().await;
+        let metadata: Vec<TransitionWalletMetadata> = all_metadata
+            .iter()
+            .cloned()
+            .filter(|metadata| metadata.target_identifier == target_identifier)
+            .collect();
+
+        return Ok(metadata);
+    }
+
+    pub async fn find_transition_wallet_metadata_by_identifier_couple(
         &self,
         initiator_identifier: &str,
         target_identifier: &str,
