@@ -4,13 +4,14 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-spectre-wallet-core = { git = "https://github.com/spectre-project/rusty-spectre.git", branch = "main" }
-spectre-wallet-keys = { git = "https://github.com/spectre-project/rusty-spectre.git", branch = "main" }
-spectre-wrpc-client = { git = "https://github.com/spectre-project/rusty-spectre.git", branch = "main" }
-spectre-consensus-core = { git = "https://github.com/spectre-project/rusty-spectre.git", branch = "main" }
-spectre-addresses = { git = "https://github.com/spectre-project/rusty-spectre.git", branch = "main" }
-spectre-bip32 = { git = "https://github.com/spectre-project/rusty-spectre.git", branch = "main" }
-thiserror = {version = "1.0.64"}
+# TODO: v0.3.16
+spectre-wallet-core = { git = "https://github.com/spectre-project/rusty-spectre.git", tag = "v0.3.15" }
+spectre-wallet-keys = { git = "https://github.com/spectre-project/rusty-spectre.git", tag = "v0.3.15" }
+spectre-wrpc-client = { git = "https://github.com/spectre-project/rusty-spectre.git", tag = "v0.3.15" }
+spectre-consensus-core = { git = "https://github.com/spectre-project/rusty-spectre.git", tag = "v0.3.15" }
+spectre-addresses = { git = "https://github.com/spectre-project/rusty-spectre.git", tag = "v0.3.15" }
+spectre-bip32 = { git = "https://github.com/spectre-project/rusty-spectre.git", tag = "v0.3.15" }
+thiserror = { version = "1.0.64" }
 serde_json = "1.0"
 serde = "1.0"
 tokio = { version = "1", features = ["full"] }

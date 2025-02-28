@@ -3,17 +3,17 @@ name = "discord_bot"
 version = "0.1.0"
 edition = "2021"
 
-
 [dependencies]
 tokio = { version = "1", features = ["full"] }
-poise = {version = "0.6.1"}
-spectre-wrpc-client = { git = "https://github.com/spectre-project/rusty-spectre.git", branch = "main" }
-core = {path = "../../libs/core"}
-spectre-wallet-core = { git = "https://github.com/spectre-project/rusty-spectre.git", branch = "main" }
-spectre-wallet-keys = { git = "https://github.com/spectre-project/rusty-spectre.git", branch = "main" }
-spectre-addresses = { git = "https://github.com/spectre-project/rusty-spectre.git", branch = "main" }
-spectre-wrpc-wasm = { git = "https://github.com/spectre-project/rusty-spectre.git", branch = "main" }
+poise = { version = "0.6.1" }
+core = { path = "../../libs/core" }
+# TODO: v0.3.16
+spectre-wrpc-client = { git = "https://github.com/spectre-project/rusty-spectre.git", tag = "v0.3.15" }
+spectre-wallet-core = { git = "https://github.com/spectre-project/rusty-spectre.git", tag = "v0.3.15" }
+spectre-wallet-keys = { git = "https://github.com/spectre-project/rusty-spectre.git", tag = "v0.3.15" }
+spectre-addresses = { git = "https://github.com/spectre-project/rusty-spectre.git", tag = "v0.3.15" }
+spectre-wrpc-wasm = { git = "https://github.com/spectre-project/rusty-spectre.git", tag = "v0.3.15" }
 workflow-core = { version = "0.12.1" }
 futures = "0.3.31"
 dotenvy = "0.15.7"
-directories = "5.0.1"
+directories = "6.0.0"
