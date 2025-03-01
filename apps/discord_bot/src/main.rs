@@ -64,6 +64,8 @@ async fn create(
             ..Default::default()
         })
         .await?;
+
+        return Ok(());
     }
 
     let user = ctx.author().id;
@@ -74,16 +76,21 @@ async fn create(
     let is_opened = tip_context.does_opened_owned_wallet_exists(&wallet_owner_identifier);
     let is_initiated = match is_opened {
         true => true,
-        false => {
-            tip_context
-                .local_store()?
-                .exists(Some(&wallet_owner_identifier))
-                .await?
-        }
+        false => tip_context
+            .owned_wallet_metadata_store
+            .find_owned_wallet_metadata_by_owner_identifier(&wallet_owner_identifier)
+            .await
+            .is_ok(),
     };
 
     if is_initiated {
-        ctx.say(format!("a discord wallet already exists",)).await?;
+        ctx.send(CreateReply {
+            reply: false,
+            content: Some("A discord wallet already exists".to_string()),
+            ephemeral: Some(true),
+            ..Default::default()
+        })
+        .await?;
 
         return Ok(());
     }
@@ -95,11 +102,14 @@ async fn create(
     )
     .await?;
 
-    ctx.say(format!(
-        "{}\n{}",
-        mnemonic.phrase(),
-        tip_wallet.receive_address()
-    ))
+    let response_message = format!("{}\n{}", mnemonic.phrase(), tip_wallet.receive_address());
+
+    ctx.send(CreateReply {
+        reply: false,
+        content: Some(response_message),
+        ephemeral: Some(true),
+        ..Default::default()
+    })
     .await?;
 
     Ok(())
@@ -107,6 +117,7 @@ async fn create(
 
 #[poise::command(slash_command, category = "wallet")]
 /// open the discord wallet using the secret
+/// TODO: display balance?
 async fn open(
     ctx: Context<'_>,
     #[min_length = 10]
@@ -140,7 +151,13 @@ async fn open(
 
     // already opened
     if let Some(wallet) = tip_context.get_opened_owned_wallet(&wallet_owner_identifier) {
-        ctx.say(format!("{}", wallet.receive_address())).await?;
+        ctx.send(CreateReply {
+            reply: false,
+            content: Some(format!("{}", wallet.receive_address())),
+            ephemeral: Some(true),
+            ..Default::default()
+        })
+        .await?;
 
         return Ok(());
     }
@@ -174,7 +191,14 @@ async fn open(
         Err(error) => return Err(Error::from(error)),
     };
 
-    ctx.say(format!("{}", tip_wallet.receive_address())).await?;
+    // should this be ephemeral? leaks secret
+    ctx.send(CreateReply {
+        reply: false,
+        content: Some(format!("{}", tip_wallet.receive_address())),
+        ephemeral: Some(true),
+        ..Default::default()
+    })
+    .await?;
 
     Ok(())
 }
@@ -197,7 +221,13 @@ async fn close(ctx: Context<'_>) -> Result<(), Error> {
         }
     }
 
-    ctx.say(format!("wallet closed")).await?;
+    ctx.send(CreateReply {
+        reply: false,
+        content: Some("wallet closed".to_string()),
+        ephemeral: Some(true),
+        ..Default::default()
+    })
+    .await?;
 
     Ok(())
 }
@@ -220,6 +250,33 @@ async fn status(ctx: Context<'_>) -> Result<(), Error> {
                 .await?
         }
     };
+
+    if !is_initiated {
+        ctx.send(CreateReply {
+            reply: false,
+            content: Some(
+                "The wallet has not been created yet. Use the `create` command to create a wallet."
+                    .to_string(),
+            ),
+            ephemeral: Some(true),
+            ..Default::default()
+        })
+        .await?;
+
+        return Ok(());
+    }
+
+    if !is_opened {
+        ctx.send(CreateReply {
+            reply: false,
+            content: Some("The wallet is not opened. Use the `open` command to open the wallet and display its balance.".to_string()),
+            ephemeral: Some(true),
+            ..Default::default()
+        })
+        .await?;
+
+        return Ok(());
+    }
 
     let balance: u64 = {
         let mut b: u64 = 0;
@@ -421,7 +478,7 @@ async fn debug(ctx: Context<'_>) -> Result<(), Error> {
 #[derive(Debug, poise::Modal)]
 #[name = "Confirm wallet destruction"]
 struct DestructionModalConfirmation {
-    #[name = "write detroy to confirm"]
+    #[name = "write destroy to confirm"]
     first_input: String,
 }
 
@@ -445,9 +502,14 @@ async fn destroy(ctx: Context<'_>) -> Result<(), Error> {
     };
 
     if !is_initiated {
-        ctx.say(format!(
-            "the wallet is not initiated, cannot destroy a non existing thing"
-        ))
+        ctx.send(CreateReply {
+            reply: false,
+            content: Some(
+                "The wallet is not initiated, cannot destroy a non-existing thing.".to_string(),
+            ),
+            ephemeral: Some(true),
+            ..Default::default()
+        })
         .await?;
 
         return Ok(());
@@ -468,15 +530,33 @@ async fn destroy(ctx: Context<'_>) -> Result<(), Error> {
 
             // TODO: erase the file on file system, current storage implementation disallow this via direct API access
 
-            ctx.say(format!("destroy ok")).await?;
+            // remove from store
+            tip_context
+                .owned_wallet_metadata_store
+                .remove_by_owner_identifier(wallet_owner_identifier.clone())
+                .await?;
+
+            ctx.send(CreateReply {
+                reply: false,
+                content: Some("Wallet destroyed successfully.".to_string()),
+                ephemeral: Some(true),
+                ..Default::default()
+            })
+            .await?;
 
             return Ok(());
         }
     }
 
-    ctx.say(format!("destroy aborted")).await?;
+    ctx.send(CreateReply {
+        reply: false,
+        content: Some("Wallet destruction aborted.".to_string()),
+        ephemeral: Some(true),
+        ..Default::default()
+    })
+    .await?;
 
-    return Ok(());
+    Ok(())
 }
 
 #[poise::command(slash_command)]
@@ -541,8 +621,14 @@ async fn restore(
     )
     .await?;
 
-    ctx.say(recovered_tip_wallet_result.receive_address())
-        .await?;
+    ctx.send(CreateReply {
+        reply: false,
+        content: Some(recovered_tip_wallet_result.receive_address().to_string()),
+        ephemeral: Some(true),
+        ..Default::default()
+    })
+    .await?;
+
     Ok(())
 }
 
