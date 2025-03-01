@@ -85,7 +85,7 @@ impl TransitionWalletMetadataStore {
 
         serde_json::to_writer(file, &copied)?;
 
-        return Ok(());
+        Ok(())
     }
 
     pub async fn find_transition_wallet_metadata_by_recipiant(
@@ -95,11 +95,11 @@ impl TransitionWalletMetadataStore {
         let all_metadata = self.metadata.read().await;
         let metadata: Vec<TransitionWalletMetadata> = all_metadata
             .iter()
-            .cloned()
             .filter(|metadata| metadata.receive_address == recipiant)
+            .cloned()
             .collect();
 
-        return Ok(metadata);
+        Ok(metadata)
     }
 
     pub async fn find_transition_wallet_metadata_by_target_identifier(
@@ -109,11 +109,11 @@ impl TransitionWalletMetadataStore {
         let all_metadata = self.metadata.read().await;
         let metadata: Vec<TransitionWalletMetadata> = all_metadata
             .iter()
-            .cloned()
             .filter(|metadata| metadata.target_identifier == target_identifier)
+            .cloned()
             .collect();
 
-        return Ok(metadata);
+        Ok(metadata)
     }
 
     pub async fn find_transition_wallet_metadata_by_identifier_couple(
@@ -122,11 +122,13 @@ impl TransitionWalletMetadataStore {
         target_identifier: &str,
     ) -> Result<Option<TransitionWalletMetadata>> {
         let all_metadata = self.metadata.read().await;
-        let metadata: Option<TransitionWalletMetadata> =
-            all_metadata.iter().cloned().find(|metadata| {
+        let metadata: Option<TransitionWalletMetadata> = all_metadata
+            .iter()
+            .find(|&metadata| {
                 metadata.initiator_identifier == initiator_identifier
                     && metadata.target_identifier == target_identifier
-            });
-        return Ok(metadata);
+            })
+            .cloned();
+        Ok(metadata)
     }
 }

@@ -55,9 +55,7 @@ impl TipOwnedWallet {
 
         wallet_arc.store().batch().await?;
 
-        wallet_arc
-            .create_wallet(&wallet_secret, wallet_args)
-            .await?;
+        wallet_arc.create_wallet(wallet_secret, wallet_args).await?;
 
         let prv_key_data = PrvKeyData::try_from_mnemonic(
             mnemonic.clone(),
@@ -80,7 +78,7 @@ impl TipOwnedWallet {
 
         let receive_address = account.receive_address()?;
 
-        wallet_arc.store().flush(&wallet_secret).await?;
+        wallet_arc.store().flush(wallet_secret).await?;
 
         let guard = wallet_arc.guard();
         let guard = guard.lock().await;
@@ -103,7 +101,7 @@ impl TipOwnedWallet {
         let tip_owned_wallet =
             tip_context.add_opened_owned_wallet(owned_identifier.into(), tip_wallet);
 
-        return Ok((tip_owned_wallet, mnemonic));
+        Ok((tip_owned_wallet, mnemonic))
     }
 
     pub async fn open(
@@ -126,7 +124,7 @@ impl TipOwnedWallet {
         let guard = guard.lock().await;
 
         wallet_arc
-            .open(&wallet_secret, Some(owned_identifier.into()), args, &guard)
+            .open(wallet_secret, Some(owned_identifier.into()), args, &guard)
             .await?;
 
         wallet_arc.activate_accounts(None, &guard).await?;
@@ -142,7 +140,7 @@ impl TipOwnedWallet {
         let tip_owned_wallet =
             tip_context.add_opened_owned_wallet(owned_identifier.into(), tip_wallet);
 
-        return Ok(tip_owned_wallet);
+        Ok(tip_owned_wallet)
     }
 
     /**
@@ -175,9 +173,7 @@ impl TipOwnedWallet {
 
         wallet_arc.store().batch().await?;
 
-        wallet_arc
-            .create_wallet(&wallet_secret, wallet_args)
-            .await?;
+        wallet_arc.create_wallet(wallet_secret, wallet_args).await?;
 
         let prv_key_data = PrvKeyData::try_from_mnemonic(
             mnemonic.clone(),
@@ -200,7 +196,7 @@ impl TipOwnedWallet {
 
         let receive_address = account.receive_address()?;
 
-        wallet_arc.store().flush(&wallet_secret).await?;
+        wallet_arc.store().flush(wallet_secret).await?;
 
         let guard = wallet_arc.guard();
         let guard = guard.lock().await;
@@ -229,7 +225,7 @@ impl TipOwnedWallet {
         let tip_owned_wallet =
             tip_context.add_opened_owned_wallet(owned_identifier.into(), tip_owned_wallet);
 
-        return Ok(tip_owned_wallet);
+        Ok(tip_owned_wallet)
     }
 
     pub fn owned_identifier(&self) -> &str {
@@ -272,7 +268,7 @@ pub struct TipTransitionWallet {
 
 impl TipTransitionWallet {
     pub fn create() -> TipTransitionWallet {
-        return TipTransitionWallet { text: "ok".into() };
+        TipTransitionWallet { text: "ok".into() }
     }
 }
 

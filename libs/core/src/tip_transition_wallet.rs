@@ -114,7 +114,7 @@ impl TipTransitionWallet {
         tip_context
             .transition_wallet_metadata_store
             .add(&TransitionWalletMetadata::new(
-                wallet_identifier.into(),
+                wallet_identifier,
                 target_identifier.into(),
                 initiator_identifier.into(),
                 tip_wallet.receive_address(),
@@ -122,7 +122,7 @@ impl TipTransitionWallet {
             ))
             .await?;
 
-        return Ok(tip_wallet);
+        Ok(tip_wallet)
     }
 
     pub async fn open(
@@ -147,7 +147,7 @@ impl TipTransitionWallet {
         let guard = wallet_arc.guard();
         let guard = guard.lock().await;
         wallet_arc
-            .open(&wallet_secret, Some(wallet_identifier), args, &guard)
+            .open(wallet_secret, Some(wallet_identifier), args, &guard)
             .await?;
 
         let guard = wallet_arc.guard();
@@ -167,7 +167,7 @@ impl TipTransitionWallet {
 
         tip_wallet.bind_rpc(&tip_context).await?;
 
-        return Ok(tip_wallet);
+        Ok(tip_wallet)
     }
 
     pub fn target_identifier(&self) -> &str {
