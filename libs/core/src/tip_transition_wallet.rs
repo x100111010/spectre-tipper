@@ -96,7 +96,9 @@ impl TipTransitionWallet {
 
         wallet_arc.store().flush(&wallet_secret).await?;
 
-        wallet_arc.activate_accounts(None).await?;
+        let guard = wallet_arc.guard();
+        let guard = guard.lock().await;
+        wallet_arc.activate_accounts(None, &guard).await?;
 
         wallet_arc.autoselect_default_account_if_single().await?;
 
@@ -142,11 +144,15 @@ impl TipTransitionWallet {
         let wallet_arc = Arc::new(wallet.clone());
 
         let args = WalletOpenArgs::default_with_legacy_accounts();
+        let guard = wallet_arc.guard();
+        let guard = guard.lock().await;
         wallet_arc
-            .open(&wallet_secret, Some(wallet_identifier), args)
+            .open(&wallet_secret, Some(wallet_identifier), args, &guard)
             .await?;
 
-        wallet_arc.activate_accounts(None).await?;
+        let guard = wallet_arc.guard();
+        let guard = guard.lock().await;
+        wallet_arc.activate_accounts(None, &guard).await?;
 
         wallet_arc.autoselect_default_account_if_single().await?;
 

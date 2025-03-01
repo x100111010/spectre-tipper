@@ -697,7 +697,7 @@ async fn main() {
     };
 
     let resolver = match forced_spectre_node.clone() {
-        Some(value) => Resolver::new(vec![Arc::new(value)]),
+        Some(value) => Resolver::new(Some(vec![Arc::new(value)]), true), // tls
         _ => Resolver::default(),
     };
 
