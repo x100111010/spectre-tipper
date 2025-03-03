@@ -11,10 +11,12 @@ use poise::{
     serenity_prelude::{self as serenity, Colour, CreateEmbed},
     CreateReply, Modal,
 };
+use tokio::fs;
 
 use spectre_wallet_core::{
     prelude::{Language, Mnemonic},
     rpc::ConnectOptions,
+    settings::application_folder,
     tx::{Fees, PaymentOutputs},
     wallet::Wallet,
 };
@@ -76,11 +78,12 @@ async fn create(
     let is_opened = tip_context.does_opened_owned_wallet_exists(&wallet_owner_identifier);
     let is_initiated = match is_opened {
         true => true,
-        false => tip_context
-            .owned_wallet_metadata_store
-            .find_owned_wallet_metadata_by_owner_identifier(&wallet_owner_identifier)
-            .await
-            .is_ok(),
+        false => {
+            tip_context
+                .local_store()?
+                .exists(Some(&wallet_owner_identifier))
+                .await?
+        }
     };
 
     if is_initiated {
@@ -528,13 +531,19 @@ async fn destroy(ctx: Context<'_>) -> Result<(), Error> {
                 };
             }
 
-            // TODO: erase the file on file system, current storage implementation disallow this via direct API access
-
             // remove from store
             tip_context
                 .owned_wallet_metadata_store
                 .remove_by_owner_identifier(wallet_owner_identifier.clone())
                 .await?;
+
+            // delete wallet file
+            let wallet_folder = application_folder()?;
+            let wallet_file = wallet_folder.join(format!("{}.wallet", wallet_owner_identifier));
+
+            if wallet_file.exists() {
+                fs::remove_file(&wallet_file).await?;
+            }
 
             ctx.send(CreateReply {
                 reply: false,
