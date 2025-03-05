@@ -33,7 +33,16 @@ type Context<'a> = poise::ApplicationContext<'a, Arc<TipContext>, Error>;
 #[poise::command(
     slash_command,
     subcommands(
-        "create", "open", "close", "restore", "status", "destroy", "send", "debug"
+        "create",
+        "open",
+        "close",
+        "restore",
+        "export",
+        "status",
+        "destroy",
+        "send",
+        "debug",
+        "change_secret"
     ),
     category = "wallet"
 )]
@@ -637,6 +646,156 @@ async fn restore(
         ..Default::default()
     })
     .await?;
+
+    Ok(())
+}
+
+#[poise::command(slash_command, category = "wallet")]
+/// export mnemonic and xpub
+async fn export(
+    ctx: Context<'_>,
+    #[min_length = 10]
+    #[description = "secret"]
+    secret: String,
+) -> Result<(), Error> {
+    let user = ctx.author().id;
+    let wallet_owner_identifier = user.to_string();
+
+    let tip_context = ctx.data();
+
+    let wallet_exists = tip_context
+        .local_store()?
+        .exists(Some(&wallet_owner_identifier))
+        .await?;
+
+    if !wallet_exists {
+        ctx.send(CreateReply {
+            reply: false,
+            content: Some("Wallet not found.".to_string()),
+            ephemeral: Some(true),
+            ..Default::default()
+        })
+        .await?;
+        return Ok(());
+    }
+
+    let tip_wallet = TipOwnedWallet::open(
+        tip_context.clone(),
+        &Secret::from(secret.clone()),
+        &wallet_owner_identifier,
+    )
+    .await?;
+
+    let (mnemonic, xpub) = tip_wallet
+        .export_mnemonic_and_xpub(&Secret::from(secret))
+        .await?;
+
+    if let Some(mnemonic) = mnemonic {
+        ctx.send(CreateReply {
+            reply: false,
+            content: Some(format!(
+                "Mnemonic phrase: {}\n\n xpub: {}",
+                mnemonic.phrase(),
+                xpub
+            )),
+            ephemeral: Some(true),
+            ..Default::default()
+        })
+        .await?;
+    }
+
+    Ok(())
+}
+
+#[poise::command(slash_command, category = "wallet")]
+/// change secret
+async fn change_secret(
+    ctx: Context<'_>,
+    #[min_length = 10]
+    #[description = "Old secret"]
+    old_secret: String,
+    #[min_length = 10]
+    #[description = "New secret"]
+    new_secret: String,
+) -> Result<(), Error> {
+    let embed = CreateEmbed::new();
+
+    if old_secret.len() < 10 || new_secret.len() < 10 {
+        let errored_embed = embed
+            .clone()
+            .title("Error while changing the wallet secret")
+            .description("Secret must be at least 10 characters long")
+            .colour(Colour::DARK_RED);
+
+        ctx.send(CreateReply {
+            reply: false,
+            embeds: vec![errored_embed],
+            ephemeral: Some(true),
+            ..Default::default()
+        })
+        .await?;
+
+        return Ok(());
+    }
+
+    let user = ctx.author().id;
+    let wallet_owner_identifier = user.to_string();
+
+    let tip_context = ctx.data();
+
+    if !tip_context.does_opened_owned_wallet_exists(&wallet_owner_identifier) {
+        let errored_embed = embed
+            .clone()
+            .title("Error while changing the wallet secret")
+            .description("Wallet is not opened.")
+            .colour(Colour::DARK_RED);
+
+        ctx.send(CreateReply {
+            reply: false,
+            embeds: vec![errored_embed],
+            ephemeral: Some(true),
+            ..Default::default()
+        })
+        .await?;
+
+        return Ok(());
+    }
+
+    let tip_wallet = tip_context
+        .get_opened_owned_wallet(&wallet_owner_identifier)
+        .ok_or("Wallet not found")?;
+
+    // change secret
+    match tip_wallet
+        .change_secret(&Secret::from(old_secret), &Secret::from(new_secret))
+        .await
+    {
+        Ok(_) => {
+            ctx.send(CreateReply {
+                reply: false,
+                content: Some("Secret changed successfully.".to_string()),
+                ephemeral: Some(true),
+                ..Default::default()
+            })
+            .await?;
+        }
+        Err(SpectreError::WalletError(spectre_wallet_core::error::Error::WalletDecrypt(_))) => {
+            let errored_embed = embed
+                .clone()
+                .title("Error while changing the wallet secret")
+                .description("Old secret is incorrect")
+                .colour(Colour::DARK_RED);
+
+            ctx.send(CreateReply {
+                reply: false,
+                embeds: vec![errored_embed],
+                ephemeral: Some(true),
+                ..Default::default()
+            })
+            .await?;
+        }
+        Err(error) => return Err(Error::from(error)),
+    }
 
     Ok(())
 }

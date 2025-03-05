@@ -1,9 +1,12 @@
 use std::{sync::Arc, time::SystemTime};
 
+use crate::error::Error;
 use crate::tip_context::TipContext;
 use crate::{owned_wallet_metadata::OwnedWalletMetadata, result::Result};
 use spectre_addresses::Address;
 use spectre_wallet_core::{
+    api::WalletApi,
+    deterministic::bip32::BIP32_ACCOUNT_KIND,
     prelude::{EncryptionKind, Language, Mnemonic, WordCount},
     rpc::{Rpc, RpcCtl},
     storage::PrvKeyData,
@@ -259,6 +262,42 @@ impl TipOwnedWallet {
         self.wallet.account()?.scan(None, None).await?;
 
         Ok(self)
+    }
+
+    /// change secret
+    pub async fn change_secret(&self, old_secret: &Secret, new_secret: &Secret) -> Result<()> {
+        self.wallet
+            .clone()
+            .wallet_change_secret(old_secret.clone(), new_secret.clone())
+            .await?;
+        Ok(())
+    }
+
+    /// export mnemonic with xpub
+    pub async fn export_mnemonic_and_xpub(
+        &self,
+        wallet_secret: &Secret,
+    ) -> Result<(Option<Mnemonic>, String)> {
+        let account = self.wallet.account()?;
+        let prv_key_data_id = account.prv_key_data_id()?;
+
+        let prv_key_data_store = self.wallet.store().as_prv_key_data_store()?;
+        let prv_key_data = prv_key_data_store
+            .load_key_data(wallet_secret, &prv_key_data_id)
+            .await?
+            .ok_or(Error::OwnedWalletNotFound())?;
+
+        let mnemonic = prv_key_data
+            .as_mnemonic(None)
+            .map_err(|_| Error::OwnedWalletNotFound())?;
+
+        let xpub_key = prv_key_data
+            .create_xpub(None, BIP32_ACCOUNT_KIND.into(), 0)
+            .await?;
+
+        let xpub_formatted = self.wallet.network_format_xpub(&xpub_key);
+
+        Ok((mnemonic, xpub_formatted))
     }
 }
 
