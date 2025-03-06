@@ -88,14 +88,14 @@ impl TransitionWalletMetadataStore {
         Ok(())
     }
 
-    pub async fn find_transition_wallet_metadata_by_recipiant(
+    pub async fn find_transition_wallet_metadata_by_recipient(
         &self,
-        recipiant: Address,
+        recipient: Address,
     ) -> Result<Vec<TransitionWalletMetadata>> {
         let all_metadata = self.metadata.read().await;
         let metadata: Vec<TransitionWalletMetadata> = all_metadata
             .iter()
-            .filter(|metadata| metadata.receive_address == recipiant)
+            .filter(|metadata| metadata.receive_address == recipient)
             .cloned()
             .collect();
 

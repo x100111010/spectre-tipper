@@ -41,7 +41,7 @@ type Context<'a> = poise::ApplicationContext<'a, Arc<TipContext>, Error>;
         "status",
         "destroy",
         "send",
-        "debug",
+        "claim",
         "change_secret"
     ),
     category = "wallet"
@@ -129,7 +129,6 @@ async fn create(
 
 #[poise::command(slash_command, category = "wallet")]
 /// open the discord wallet using the secret
-/// TODO: display balance?
 async fn open(
     ctx: Context<'_>,
     #[min_length = 10]
@@ -354,8 +353,8 @@ async fn status(ctx: Context<'_>) -> Result<(), Error> {
 }
 
 #[poise::command(slash_command, category = "wallet")]
-/// dev cmd
-async fn debug(ctx: Context<'_>) -> Result<(), Error> {
+/// transfers funds from transition_wallet to owned_wallet
+async fn claim(ctx: Context<'_>) -> Result<(), Error> {
     let user = ctx.author().id;
     let wallet_owner_identifier = user.to_string();
 
@@ -373,10 +372,15 @@ async fn debug(ctx: Context<'_>) -> Result<(), Error> {
     };
 
     if !is_opened && !is_initiated {
-        ctx.say(format!(
-            "is opened: {}\nis_initiated{}",
-            is_opened, is_initiated
-        ))
+        ctx.send(CreateReply {
+            reply: false,
+            content: Some(format!(
+                "is opened: {}\nis_initiated: {}",
+                is_opened, is_initiated
+            )),
+            ephemeral: Some(true),
+            ..Default::default()
+        })
         .await?;
 
         return Ok(());
@@ -385,18 +389,29 @@ async fn debug(ctx: Context<'_>) -> Result<(), Error> {
     let tip_wallet = match tip_context.get_opened_owned_wallet(&wallet_owner_identifier) {
         Some(w) => w,
         None => {
-            ctx.say("unexpected error: wallet not opened").await?;
+            ctx.send(CreateReply {
+                reply: false,
+                content: Some("unexpected error: wallet not opened".to_string()),
+                ephemeral: Some(true),
+                ..Default::default()
+            })
+            .await?;
             return Ok(());
         }
     };
 
     let wallet = tip_wallet.wallet();
-    let tipee_receive_address = wallet.account().unwrap().receive_address().unwrap();
+    let owner_receive_address = wallet.account().unwrap().receive_address().unwrap();
 
-    ctx.say(format!(
-        "tipee receive address: {}",
-        tipee_receive_address.address_to_string()
-    ))
+    ctx.send(CreateReply {
+        reply: false,
+        content: Some(format!(
+            "Owned wallet receive address: {}",
+            owner_receive_address.address_to_string()
+        )),
+        ephemeral: Some(true),
+        ..Default::default()
+    })
     .await?;
 
     // let wallet = Arc::new(Wallet::try_new(Wallet::local_store()?, None, None)?);
@@ -407,6 +422,53 @@ async fn debug(ctx: Context<'_>) -> Result<(), Error> {
         .transition_wallet_metadata_store
         .find_transition_wallet_metadata_by_target_identifier(&wallet_owner_identifier)
         .await?;
+
+    // check if there are any pending balances in transition wallets
+    let pending_transition_balance = join_all(transition_wallets.iter().map(|metadata| async {
+        let secret = Secret::from(metadata.secret.clone());
+        let transition_wallet = TipTransitionWallet::open(
+            tip_context.clone(),
+            &secret,
+            &metadata.initiator_identifier,
+            &metadata.target_identifier,
+        )
+        .await;
+
+        let balance: u64 = match transition_wallet {
+            Ok(tw) => {
+                let account_result = tw.wallet().account();
+                let mut b = 0;
+                if let Ok(account) = account_result {
+                    if let Some(balance) = account.balance() {
+                        b = balance.mature
+                    }
+                }
+
+                b
+            }
+            Err(e) => {
+                println!("warning: {:?}", e);
+
+                0 as u64
+            }
+        };
+
+        return balance;
+    }))
+    .await
+    .into_iter()
+    .reduce(|a, b| a + b);
+
+    if pending_transition_balance.unwrap_or(0) == 0 {
+        ctx.send(CreateReply {
+            reply: false,
+            content: Some("No coins stored in the transition wallets, aborting.".to_string()),
+            ephemeral: Some(true),
+            ..Default::default()
+        })
+        .await?;
+        return Ok(());
+    }
 
     join_all(transition_wallets.iter().map(|metadata| async {
         let secret = Secret::from(metadata.secret.clone());
@@ -423,13 +485,13 @@ async fn debug(ctx: Context<'_>) -> Result<(), Error> {
                 let account_result = tw.wallet().account();
                 if let Ok(account) = account_result {
                     if let Some(balance) = account.balance() {
-                        let receive_address = tipee_receive_address.clone();
+                        let receive_address = owner_receive_address.clone();
 
                         println!(
                             "sending {} SPR from {} to {}",
                             balance.mature,
                             account.receive_address().unwrap().address_to_string(),
-                            tipee_receive_address.address_to_string()
+                            owner_receive_address.address_to_string()
                         );
 
                         let address = receive_address;
@@ -478,10 +540,15 @@ async fn debug(ctx: Context<'_>) -> Result<(), Error> {
     }))
     .await;
 
-    ctx.say(format!(
-        "is opened: {}\nis_initiated{}",
-        is_opened, is_initiated
-    ))
+    ctx.send(CreateReply {
+        reply: false,
+        content: Some(format!(
+            "is opened: {}\nis_initiated: {}",
+            is_opened, is_initiated
+        )),
+        ephemeral: Some(true),
+        ..Default::default()
+    })
     .await?;
 
     Ok(())
@@ -517,7 +584,7 @@ async fn destroy(ctx: Context<'_>) -> Result<(), Error> {
         ctx.send(CreateReply {
             reply: false,
             content: Some(
-                "The wallet is not initiated, cannot destroy a non-existing thing.".to_string(),
+                "The wallet is not initiated, cannot destroy a non-existing wallet.".to_string(),
             ),
             ephemeral: Some(true),
             ..Default::default()
@@ -592,7 +659,7 @@ async fn restore(
         let errored_embed = embed
             .clone()
             .title("Error while restoring the wallet")
-            .description("Secret must be greater than 10")
+            .description("Secret must be at least 10 characters long")
             .colour(Colour::DARK_RED);
 
         ctx.send(CreateReply {
@@ -602,26 +669,45 @@ async fn restore(
             ..Default::default()
         })
         .await?;
+        return Ok(());
     }
 
-    let errored_embed = embed
-        .clone()
-        .title("Error while restoring the wallet")
-        .description("Mnemonic is not valid")
-        .colour(Colour::DARK_RED);
+    let mnemonic = match Mnemonic::new(mnemonic_phrase.trim(), Language::English) {
+        Ok(mnemonic) => {
+            // is a valid BIP39 mnemonic (12 or 24 words)
+            let word_count = mnemonic.phrase().split_whitespace().count();
+            if word_count != 12 && word_count != 24 {
+                let errored_embed = embed
+                    .clone()
+                    .title("Error while restoring the wallet")
+                    .description("Mnemonic must be 12 or 24 words")
+                    .colour(Colour::DARK_RED);
 
-    let reply = CreateReply {
-        reply: false,
-        embeds: vec![errored_embed],
-        ephemeral: Some(true),
-        ..Default::default()
-    };
-
-    // try cast mnemonic_prase as Mnemonic
-    let mnemonic = match Mnemonic::new(mnemonic_phrase, Language::default()) {
-        Ok(r) => r,
+                ctx.send(CreateReply {
+                    reply: false,
+                    embeds: vec![errored_embed],
+                    ephemeral: Some(true),
+                    ..Default::default()
+                })
+                .await?;
+                return Ok(());
+            }
+            mnemonic
+        }
         Err(_) => {
-            ctx.send(reply).await?;
+            let errored_embed = embed
+                .clone()
+                .title("Error while restoring the wallet")
+                .description("Invalid mnemonic phrase")
+                .colour(Colour::DARK_RED);
+
+            ctx.send(CreateReply {
+                reply: false,
+                embeds: vec![errored_embed],
+                ephemeral: Some(true),
+                ..Default::default()
+            })
+            .await?;
             return Ok(());
         }
     };
@@ -813,7 +899,7 @@ async fn send(
         return Ok(());
     }
 
-    let recipiant_identifier = user.id.to_string();
+    let recipient_identifier = user.id.to_string();
 
     let response = format!(
         "{}'s account was created at {}",
@@ -858,13 +944,13 @@ async fn send(
 
     let wallet = tip_wallet.wallet();
 
-    // find address of recipiant or create a temporary wallet
+    // find address of recipient or create a temporary wallet
     let existing_owned_wallet = tip_context
         .owned_wallet_metadata_store
-        .find_owned_wallet_metadata_by_owner_identifier(&recipiant_identifier)
+        .find_owned_wallet_metadata_by_owner_identifier(&recipient_identifier)
         .await;
 
-    let recipiant_address = match existing_owned_wallet {
+    let recipient_address = match existing_owned_wallet {
         Ok(wallet) => wallet.receive_address,
         Err(SpectreError::OwnedWalletNotFound()) => {
             // find or create a temporary wallet
@@ -872,7 +958,7 @@ async fn send(
                 .transition_wallet_metadata_store
                 .find_transition_wallet_metadata_by_identifier_couple(
                     &author.to_string(),
-                    &recipiant_identifier,
+                    &recipient_identifier,
                 )
                 .await?;
 
@@ -881,7 +967,7 @@ async fn send(
                 None => TipTransitionWallet::create(
                     tip_context.clone(),
                     &author.to_string(),
-                    &recipiant_identifier,
+                    &recipient_identifier,
                 )
                 .await?
                 .receive_address(),
@@ -893,7 +979,7 @@ async fn send(
         }
     };
 
-    let address = recipiant_address;
+    let address = recipient_address;
 
     let amount_sompi = try_parse_required_nonzero_spectre_as_sompi_u64(Some(amount))?;
 

@@ -97,14 +97,14 @@ impl OwnedWalletMetadataStore {
         Ok(())
     }
 
-    pub async fn find_owned_wallet_metadata_by_recipiant_address(
+    pub async fn find_owned_wallet_metadata_by_recipient_address(
         &self,
-        recipiant: Address,
+        recipient: Address,
     ) -> Result<OwnedWalletMetadata> {
         let all_metadata = self.metadata.read().await;
         let metadata_option: Option<OwnedWalletMetadata> = all_metadata
             .iter()
-            .find(|&metadata| metadata.receive_address == recipiant)
+            .find(|&metadata| metadata.receive_address == recipient)
             .cloned();
 
         if metadata_option.is_none() {
