@@ -83,9 +83,11 @@ impl TipOwnedWallet {
 
         wallet_arc.store().flush(wallet_secret).await?;
 
-        let guard = wallet_arc.guard();
-        let guard = guard.lock().await;
-        wallet_arc.activate_accounts(None, &guard).await?;
+        {
+            let guard = wallet_arc.guard();
+            let guard = guard.lock().await;
+            wallet_arc.activate_accounts(None, &guard).await?;
+        }
 
         wallet_arc.autoselect_default_account_if_single().await?;
 
@@ -123,14 +125,19 @@ impl TipOwnedWallet {
 
         let args = WalletOpenArgs::default_with_legacy_accounts();
 
-        let guard = wallet_arc.guard();
-        let guard = guard.lock().await;
+        {
+            let guard = wallet_arc.guard();
+            let guard = guard.lock().await;
+            wallet_arc
+                .open(wallet_secret, Some(owned_identifier.into()), args, &guard)
+                .await?;
+        }
 
-        wallet_arc
-            .open(wallet_secret, Some(owned_identifier.into()), args, &guard)
-            .await?;
-
-        wallet_arc.activate_accounts(None, &guard).await?;
+        {
+            let guard = wallet_arc.guard();
+            let guard = guard.lock().await;
+            wallet_arc.activate_accounts(None, &guard).await?;
+        }
 
         wallet_arc.autoselect_default_account_if_single().await?;
 
@@ -201,10 +208,12 @@ impl TipOwnedWallet {
 
         wallet_arc.store().flush(wallet_secret).await?;
 
-        let guard = wallet_arc.guard();
-        let guard = guard.lock().await;
+        {
+            let guard = wallet_arc.guard();
+            let guard = guard.lock().await;
+            wallet_arc.activate_accounts(None, &guard).await?;
+        }
 
-        wallet_arc.activate_accounts(None, &guard).await?;
         wallet_arc.autoselect_default_account_if_single().await?;
 
         let tip_owned_wallet =
