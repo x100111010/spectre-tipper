@@ -292,7 +292,7 @@ impl TipOwnedWallet {
 
         let prv_key_data_store = self.wallet.store().as_prv_key_data_store()?;
         let prv_key_data = prv_key_data_store
-            .load_key_data(wallet_secret, &prv_key_data_id)
+            .load_key_data(wallet_secret, prv_key_data_id)
             .await?
             .ok_or(Error::OwnedWalletNotFound())?;
 
