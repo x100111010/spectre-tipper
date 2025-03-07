@@ -14,11 +14,10 @@ use poise::{
 use tokio::fs;
 
 use spectre_wallet_core::{
-    prelude::{Language, Mnemonic},
+    prelude::{Address, Language, Mnemonic},
     rpc::ConnectOptions,
     settings::application_folder,
     tx::{Fees, PaymentOutputs},
-    wallet::Wallet,
 };
 use spectre_wallet_keys::secret::Secret;
 use spectre_wrpc_client::{prelude::NetworkId, Resolver, SpectreRpcClient, WrpcEncoding};
@@ -27,7 +26,33 @@ use workflow_core::abortable::Abortable;
 type Error = Box<dyn std::error::Error + Send + Sync>;
 type Context<'a> = poise::ApplicationContext<'a, Arc<TipContext>, Error>;
 
-// TODO: mutualize embed creation (avoid repetition and centralize calls) and reply in general
+// embed creation
+fn create_embed(title: &str, description: &str, colour: Colour) -> CreateEmbed {
+    CreateEmbed::new()
+        .title(title)
+        .description(description)
+        .colour(colour)
+}
+
+fn create_error_embed(title: &str, description: &str) -> CreateEmbed {
+    create_embed(title, description, Colour::DARK_RED)
+}
+
+fn create_success_embed(title: &str, description: &str) -> CreateEmbed {
+    create_embed(title, description, Colour::DARK_GREEN)
+}
+
+async fn send_reply(ctx: Context<'_>, embed: CreateEmbed, ephemeral: bool) -> Result<(), Error> {
+    ctx.send(CreateReply {
+        reply: false,
+        embeds: vec![embed],
+        ephemeral: Some(ephemeral),
+        ..Default::default()
+    })
+    .await?;
+    Ok(())
+}
+
 // TODO: move cmd to dedicated files
 
 #[poise::command(
@@ -42,7 +67,8 @@ type Context<'a> = poise::ApplicationContext<'a, Arc<TipContext>, Error>;
         "destroy",
         "send",
         "claim",
-        "change_secret"
+        "change_secret",
+        "withdraw"
     ),
     category = "wallet"
 )]
@@ -59,26 +85,6 @@ async fn create(
     #[description = "secret"]
     secret: String,
 ) -> Result<(), Error> {
-    let embed = CreateEmbed::new();
-
-    if secret.len() < 10 {
-        let errored_embed = embed
-            .clone()
-            .title("Error while restoring the wallet")
-            .description("Secret must be greater than 10")
-            .colour(Colour::DARK_RED);
-
-        ctx.send(CreateReply {
-            reply: false,
-            embeds: vec![errored_embed],
-            ephemeral: Some(true),
-            ..Default::default()
-        })
-        .await?;
-
-        return Ok(());
-    }
-
     let user = ctx.author().id;
     let wallet_owner_identifier = user.to_string();
 
@@ -96,15 +102,8 @@ async fn create(
     };
 
     if is_initiated {
-        ctx.send(CreateReply {
-            reply: false,
-            content: Some("A discord wallet already exists".to_string()),
-            ephemeral: Some(true),
-            ..Default::default()
-        })
-        .await?;
-
-        return Ok(());
+        let embed = create_error_embed("Error", "A discord wallet already exists");
+        return send_reply(ctx, embed, true).await;
     }
 
     let (tip_wallet, mnemonic) = TipOwnedWallet::create(
@@ -114,17 +113,11 @@ async fn create(
     )
     .await?;
 
-    let response_message = format!("{}\n{}", mnemonic.phrase(), tip_wallet.receive_address());
+    let embed = create_success_embed("Wallet Created Successfully", "")
+        .field("Mnemonic Phrase", mnemonic.phrase(), false)
+        .field("Receive Address", tip_wallet.receive_address(), false);
 
-    ctx.send(CreateReply {
-        reply: false,
-        content: Some(response_message),
-        ephemeral: Some(true),
-        ..Default::default()
-    })
-    .await?;
-
-    Ok(())
+    send_reply(ctx, embed, true).await
 }
 
 #[poise::command(slash_command, category = "wallet")]
@@ -135,26 +128,6 @@ async fn open(
     #[description = "secret"]
     secret: String,
 ) -> Result<(), Error> {
-    let embed = CreateEmbed::new();
-
-    if secret.len() < 10 {
-        let errored_embed = embed
-            .clone()
-            .title("Error while restoring the wallet")
-            .description("Secret must be greater than 10")
-            .colour(Colour::DARK_RED);
-
-        ctx.send(CreateReply {
-            reply: false,
-            embeds: vec![errored_embed],
-            ephemeral: Some(true),
-            ..Default::default()
-        })
-        .await?;
-
-        return Ok(());
-    }
-
     let user = ctx.author().id;
     let wallet_owner_identifier = user.to_string();
 
@@ -162,15 +135,11 @@ async fn open(
 
     // already opened
     if let Some(wallet) = tip_context.get_opened_owned_wallet(&wallet_owner_identifier) {
-        ctx.send(CreateReply {
-            reply: false,
-            content: Some(format!("{}", wallet.receive_address())),
-            ephemeral: Some(true),
-            ..Default::default()
-        })
-        .await?;
-
-        return Ok(());
+        let embed = create_success_embed(
+            "Wallet Already Opened",
+            &format!("Your wallet address: {}", wallet.receive_address()),
+        );
+        return send_reply(ctx, embed, true).await;
     }
 
     let tip_wallet_result = TipOwnedWallet::open(
@@ -183,35 +152,17 @@ async fn open(
     let tip_wallet = match tip_wallet_result {
         Ok(t) => t,
         Err(SpectreError::WalletError(spectre_wallet_core::error::Error::WalletDecrypt(_))) => {
-            let errored_embed = embed
-                .clone()
-                .title("Error while opening the wallet")
-                .description("Secret is wrong")
-                .colour(Colour::DARK_RED);
-
-            ctx.send(CreateReply {
-                reply: false,
-                embeds: vec![errored_embed],
-                ephemeral: Some(true),
-                ..Default::default()
-            })
-            .await?;
-
-            return Ok(());
+            let embed = create_error_embed("Error while opening the wallet", "Secret is wrong");
+            return send_reply(ctx, embed, true).await;
         }
         Err(error) => return Err(Error::from(error)),
     };
 
-    // should this be ephemeral? leaks secret
-    ctx.send(CreateReply {
-        reply: false,
-        content: Some(format!("{}", tip_wallet.receive_address())),
-        ephemeral: Some(true),
-        ..Default::default()
-    })
-    .await?;
-
-    Ok(())
+    let embed = create_success_embed(
+        "Wallet Opened Successfully",
+        &format!("Your wallet address: {}", tip_wallet.receive_address()),
+    );
+    send_reply(ctx, embed, true).await
 }
 
 #[poise::command(slash_command, category = "wallet")]
@@ -232,15 +183,8 @@ async fn close(ctx: Context<'_>) -> Result<(), Error> {
         }
     }
 
-    ctx.send(CreateReply {
-        reply: false,
-        content: Some("wallet closed".to_string()),
-        ephemeral: Some(true),
-        ..Default::default()
-    })
-    .await?;
-
-    Ok(())
+    let embed = create_success_embed("Wallet Closed", "Your wallet has been successfully closed.");
+    send_reply(ctx, embed, true).await
 }
 
 #[poise::command(slash_command, category = "wallet")]
@@ -263,30 +207,19 @@ async fn status(ctx: Context<'_>) -> Result<(), Error> {
     };
 
     if !is_initiated {
-        ctx.send(CreateReply {
-            reply: false,
-            content: Some(
-                "The wallet has not been created yet. Use the `create` command to create a wallet."
-                    .to_string(),
-            ),
-            ephemeral: Some(true),
-            ..Default::default()
-        })
-        .await?;
-
-        return Ok(());
+        let embed = create_error_embed(
+            "Wallet Status",
+            "The wallet has not been created yet. Use the `create` command to create a wallet.",
+        );
+        return send_reply(ctx, embed, true).await;
     }
 
     if !is_opened {
-        ctx.send(CreateReply {
-            reply: false,
-            content: Some("The wallet is not opened. Use the `open` command to open the wallet and display its balance.".to_string()),
-            ephemeral: Some(true),
-            ..Default::default()
-        })
-        .await?;
-
-        return Ok(());
+        let embed = create_error_embed(
+            "Wallet Status",
+            "The wallet is not opened. Use the `open` command to open the wallet and display its balance.",
+        );
+        return send_reply(ctx, embed, true).await;
     }
 
     let balance: u64 = {
@@ -341,15 +274,17 @@ async fn status(ctx: Context<'_>) -> Result<(), Error> {
     .into_iter()
     .reduce(|a, b| a + b);
 
-    // wallet needs to be opened in order to display its balance
-    // else it display 0
-    ctx.say(format!(
-        "is opened: {}\nis_initiated: {}\nbalance: {}\npending transition balance: {:?}",
-        is_opened, is_initiated, balance, pending_transition_balance
-    ))
-    .await?;
+    let embed = create_success_embed("Wallet Status", "")
+        .field("Is Opened", is_opened.to_string(), true)
+        .field("Is Initiated", is_initiated.to_string(), true)
+        .field("Balance (in sompis)", balance.to_string(), true)
+        .field(
+            "Pending Transition Balance",
+            pending_transition_balance.unwrap_or(0).to_string(),
+            true,
+        );
 
-    Ok(())
+    send_reply(ctx, embed, true).await
 }
 
 #[poise::command(slash_command, category = "wallet")]
@@ -372,51 +307,32 @@ async fn claim(ctx: Context<'_>) -> Result<(), Error> {
     };
 
     if !is_opened && !is_initiated {
-        ctx.send(CreateReply {
-            reply: false,
-            content: Some(format!(
-                "is opened: {}\nis_initiated: {}",
+        let embed = create_error_embed(
+            "Error",
+            &format!(
+                "Wallet is not opened or initiated.\nis_opened: {}\nis_initiated: {}",
                 is_opened, is_initiated
-            )),
-            ephemeral: Some(true),
-            ..Default::default()
-        })
-        .await?;
-
-        return Ok(());
+            ),
+        );
+        return send_reply(ctx, embed, true).await;
     }
 
     let tip_wallet = match tip_context.get_opened_owned_wallet(&wallet_owner_identifier) {
         Some(w) => w,
         None => {
-            ctx.send(CreateReply {
-                reply: false,
-                content: Some("unexpected error: wallet not opened".to_string()),
-                ephemeral: Some(true),
-                ..Default::default()
-            })
-            .await?;
-            return Ok(());
+            let embed = create_error_embed("Error", "Unexpected error: wallet not opened");
+            return send_reply(ctx, embed, true).await;
         }
     };
 
     let wallet = tip_wallet.wallet();
     let owner_receive_address = wallet.account().unwrap().receive_address().unwrap();
 
-    ctx.send(CreateReply {
-        reply: false,
-        content: Some(format!(
-            "Owned wallet receive address: {}",
-            owner_receive_address.address_to_string()
-        )),
-        ephemeral: Some(true),
-        ..Default::default()
-    })
-    .await?;
-
-    // let wallet = Arc::new(Wallet::try_new(Wallet::local_store()?, None, None)?);
-
-    // let descriptors = wallet.account_descriptors().await?;
+    let embed = create_success_embed(
+        "Owned Wallet Address",
+        &format!("{}", owner_receive_address.address_to_string()),
+    );
+    send_reply(ctx, embed, true).await?;
 
     let transition_wallets = tip_context
         .transition_wallet_metadata_store
@@ -460,14 +376,11 @@ async fn claim(ctx: Context<'_>) -> Result<(), Error> {
     .reduce(|a, b| a + b);
 
     if pending_transition_balance.unwrap_or(0) == 0 {
-        ctx.send(CreateReply {
-            reply: false,
-            content: Some("No coins stored in the transition wallets, aborting.".to_string()),
-            ephemeral: Some(true),
-            ..Default::default()
-        })
-        .await?;
-        return Ok(());
+        let embed = create_error_embed(
+            "No Funds to Claim",
+            "No coins stored in the transition wallets, aborting.",
+        );
+        return send_reply(ctx, embed, true).await;
     }
 
     join_all(transition_wallets.iter().map(|metadata| async {
@@ -507,9 +420,7 @@ async fn claim(ctx: Context<'_>) -> Result<(), Error> {
                         );
 
                         let outputs = PaymentOutputs::from((address, amount_minus_gas_fee));
-
                         let abortable = Abortable::default();
-
                         let wallet_secret = Secret::from(secret);
 
                         let (summary, hashes) = account
@@ -540,18 +451,11 @@ async fn claim(ctx: Context<'_>) -> Result<(), Error> {
     }))
     .await;
 
-    ctx.send(CreateReply {
-        reply: false,
-        content: Some(format!(
-            "is opened: {}\nis_initiated: {}",
-            is_opened, is_initiated
-        )),
-        ephemeral: Some(true),
-        ..Default::default()
-    })
-    .await?;
-
-    Ok(())
+    let embed = create_success_embed(
+        "Successfully claimed funds from transition wallets.",
+        &format!("is opened: {}\nis initiated: {}", is_opened, is_initiated),
+    );
+    send_reply(ctx, embed, true).await
 }
 
 #[derive(Debug, poise::Modal)]
@@ -581,17 +485,11 @@ async fn destroy(ctx: Context<'_>) -> Result<(), Error> {
     };
 
     if !is_initiated {
-        ctx.send(CreateReply {
-            reply: false,
-            content: Some(
-                "The wallet is not initiated, cannot destroy a non-existing wallet.".to_string(),
-            ),
-            ephemeral: Some(true),
-            ..Default::default()
-        })
-        .await?;
-
-        return Ok(());
+        let embed = create_error_embed(
+            "Error",
+            "The wallet is not initiated, cannot destroy a non-existing wallet.",
+        );
+        return send_reply(ctx, embed, true).await;
     }
 
     let result = DestructionModalConfirmation::execute(ctx).await?;
@@ -621,31 +519,17 @@ async fn destroy(ctx: Context<'_>) -> Result<(), Error> {
                 fs::remove_file(&wallet_file).await?;
             }
 
-            ctx.send(CreateReply {
-                reply: false,
-                content: Some("Wallet destroyed successfully.".to_string()),
-                ephemeral: Some(true),
-                ..Default::default()
-            })
-            .await?;
-
-            return Ok(());
+            let embed = create_success_embed("Wallet Destroyed", "");
+            return send_reply(ctx, embed, true).await;
         }
     }
 
-    ctx.send(CreateReply {
-        reply: false,
-        content: Some("Wallet destruction aborted.".to_string()),
-        ephemeral: Some(true),
-        ..Default::default()
-    })
-    .await?;
-
-    Ok(())
+    let embed = create_embed("Wallet Destruction Aborted", "", Colour::DARK_ORANGE);
+    send_reply(ctx, embed, true).await
 }
 
 #[poise::command(slash_command)]
-/// restore a wallet from the mnemonic
+/// restore (bip32) wallet from the mnemonic
 async fn restore(
     ctx: Context<'_>,
     #[description = "mnemonic"] mnemonic_phrase: String,
@@ -653,62 +537,25 @@ async fn restore(
     #[description = "new secret"]
     secret: String,
 ) -> Result<(), Error> {
-    let embed = CreateEmbed::new();
-
-    if secret.len() < 10 {
-        let errored_embed = embed
-            .clone()
-            .title("Error while restoring the wallet")
-            .description("Secret must be at least 10 characters long")
-            .colour(Colour::DARK_RED);
-
-        ctx.send(CreateReply {
-            reply: false,
-            embeds: vec![errored_embed],
-            ephemeral: Some(true),
-            ..Default::default()
-        })
-        .await?;
-        return Ok(());
-    }
-
     let mnemonic = match Mnemonic::new(mnemonic_phrase.trim(), Language::English) {
         Ok(mnemonic) => {
-            // is a valid BIP39 mnemonic (12 or 24 words)
+            // is a valid BIP32 mnemonic (12 or 24 words)
             let word_count = mnemonic.phrase().split_whitespace().count();
             if word_count != 12 && word_count != 24 {
-                let errored_embed = embed
-                    .clone()
-                    .title("Error while restoring the wallet")
-                    .description("Mnemonic must be 12 or 24 words")
-                    .colour(Colour::DARK_RED);
-
-                ctx.send(CreateReply {
-                    reply: false,
-                    embeds: vec![errored_embed],
-                    ephemeral: Some(true),
-                    ..Default::default()
-                })
-                .await?;
-                return Ok(());
+                let embed = create_error_embed(
+                    "Error while restoring the wallet",
+                    "Mnemonic must be 12 or 24 words",
+                );
+                return send_reply(ctx, embed, true).await;
             }
             mnemonic
         }
         Err(_) => {
-            let errored_embed = embed
-                .clone()
-                .title("Error while restoring the wallet")
-                .description("Invalid mnemonic phrase")
-                .colour(Colour::DARK_RED);
-
-            ctx.send(CreateReply {
-                reply: false,
-                embeds: vec![errored_embed],
-                ephemeral: Some(true),
-                ..Default::default()
-            })
-            .await?;
-            return Ok(());
+            let embed = create_error_embed(
+                "Error while restoring the wallet",
+                "Invalid mnemonic phrase",
+            );
+            return send_reply(ctx, embed, true).await;
         }
     };
 
@@ -725,15 +572,17 @@ async fn restore(
     )
     .await?;
 
-    ctx.send(CreateReply {
-        reply: false,
-        content: Some(recovered_tip_wallet_result.receive_address().to_string()),
-        ephemeral: Some(true),
-        ..Default::default()
-    })
-    .await?;
+    let embed = create_success_embed(
+        "Wallet Restored Successfully",
+        "Your wallet has been restored from the mnemonic phrase",
+    )
+    .field(
+        "Receive Address",
+        recovered_tip_wallet_result.receive_address().to_string(),
+        false,
+    );
 
-    Ok(())
+    send_reply(ctx, embed, true).await
 }
 
 #[poise::command(slash_command, category = "wallet")]
@@ -755,14 +604,8 @@ async fn export(
         .await?;
 
     if !wallet_exists {
-        ctx.send(CreateReply {
-            reply: false,
-            content: Some("Wallet not found.".to_string()),
-            ephemeral: Some(true),
-            ..Default::default()
-        })
-        .await?;
-        return Ok(());
+        let embed = create_error_embed("Error", "Wallet not found.");
+        return send_reply(ctx, embed, true).await;
     }
 
     let tip_wallet = TipOwnedWallet::open(
@@ -777,17 +620,11 @@ async fn export(
         .await?;
 
     if let Some(mnemonic) = mnemonic {
-        ctx.send(CreateReply {
-            reply: false,
-            content: Some(format!(
-                "Mnemonic phrase: {}\n\n xpub: {}",
-                mnemonic.phrase(),
-                xpub
-            )),
-            ephemeral: Some(true),
-            ..Default::default()
-        })
-        .await?;
+        let embed = create_success_embed("Wallet Export", "")
+            .field("Mnemonic Phrase", mnemonic.phrase(), false)
+            .field("Extended Public Key (xpub)", xpub, false);
+
+        send_reply(ctx, embed, true).await?;
     }
 
     Ok(())
@@ -804,47 +641,17 @@ async fn change_secret(
     #[description = "New secret"]
     new_secret: String,
 ) -> Result<(), Error> {
-    let embed = CreateEmbed::new();
-
-    if old_secret.len() < 10 || new_secret.len() < 10 {
-        let errored_embed = embed
-            .clone()
-            .title("Error while changing the wallet secret")
-            .description("Secret must be at least 10 characters long")
-            .colour(Colour::DARK_RED);
-
-        ctx.send(CreateReply {
-            reply: false,
-            embeds: vec![errored_embed],
-            ephemeral: Some(true),
-            ..Default::default()
-        })
-        .await?;
-
-        return Ok(());
-    }
-
     let user = ctx.author().id;
     let wallet_owner_identifier = user.to_string();
 
     let tip_context = ctx.data();
 
     if !tip_context.does_opened_owned_wallet_exists(&wallet_owner_identifier) {
-        let errored_embed = embed
-            .clone()
-            .title("Error while changing the wallet secret")
-            .description("Wallet is not opened.")
-            .colour(Colour::DARK_RED);
-
-        ctx.send(CreateReply {
-            reply: false,
-            embeds: vec![errored_embed],
-            ephemeral: Some(true),
-            ..Default::default()
-        })
-        .await?;
-
-        return Ok(());
+        let embed = create_error_embed(
+            "Error while changing the wallet secret",
+            "Wallet is not opened.",
+        );
+        return send_reply(ctx, embed, true).await;
     }
 
     let tip_wallet = tip_context
@@ -857,33 +664,18 @@ async fn change_secret(
         .await
     {
         Ok(_) => {
-            ctx.send(CreateReply {
-                reply: false,
-                content: Some("Secret changed successfully.".to_string()),
-                ephemeral: Some(true),
-                ..Default::default()
-            })
-            .await?;
+            let embed = create_success_embed("Success", "Secret changed successfully.");
+            send_reply(ctx, embed, true).await
         }
         Err(SpectreError::WalletError(spectre_wallet_core::error::Error::WalletDecrypt(_))) => {
-            let errored_embed = embed
-                .clone()
-                .title("Error while changing the wallet secret")
-                .description("Old secret is incorrect")
-                .colour(Colour::DARK_RED);
-
-            ctx.send(CreateReply {
-                reply: false,
-                embeds: vec![errored_embed],
-                ephemeral: Some(true),
-                ..Default::default()
-            })
-            .await?;
+            let embed = create_error_embed(
+                "Error while changing the wallet secret",
+                "Old secret is incorrect",
+            );
+            send_reply(ctx, embed, true).await
         }
         Err(error) => return Err(Error::from(error)),
     }
-
-    Ok(())
 }
 
 #[poise::command(slash_command, category = "wallet")]
@@ -892,11 +684,13 @@ async fn send(
     ctx: Context<'_>,
     #[description = "Send to"] user: serenity::User,
     #[description = "Amount"] amount: String,
-    #[description = "Wallet Secret"] secret: String,
+    #[min_length = 10]
+    #[description = "Wallet secret"]
+    secret: String,
 ) -> Result<(), Error> {
     if user.bot || user.system {
-        ctx.say("user is a bot or a system user").await?;
-        return Ok(());
+        let embed = create_error_embed("Error", "User is a bot or a system user");
+        return send_reply(ctx, embed, true).await;
     }
 
     let recipient_identifier = user.id.to_string();
@@ -918,20 +712,20 @@ async fn send(
     };
 
     if !is_initiated {
-        ctx.say("wallet not initiated yet").await?;
-        return Ok(());
+        let embed = create_error_embed("Error", "Wallet not initiated yet");
+        return send_reply(ctx, embed, true).await;
     }
 
     if !is_opened {
-        ctx.say("wallet not opened").await?;
-        return Ok(());
+        let embed = create_error_embed("Error", "Wallet not opened");
+        return send_reply(ctx, embed, true).await;
     }
 
     let tip_wallet = match tip_context.get_opened_owned_wallet(&wallet_owner_identifier) {
         Some(w) => w,
         None => {
-            ctx.say("unexpected error: wallet not opened").await?;
-            return Ok(());
+            let embed = create_error_embed("Error", "Unexpected error: wallet not opened");
+            return send_reply(ctx, embed, true).await;
         }
     };
 
@@ -967,21 +761,18 @@ async fn send(
             }
         }
         Err(e) => {
-            ctx.say(format!("Error: {:}", e)).await?;
-            return Ok(());
+            let embed = create_error_embed("Error", &format!("Error: {:}", e));
+            return send_reply(ctx, embed, true).await;
         }
     };
 
     let address = recipient_address;
 
     let amount_sompi = try_parse_required_nonzero_spectre_as_sompi_u64(Some(amount))?;
-
     println!("amount sompi {}", amount_sompi);
 
     let outputs = PaymentOutputs::from((address, amount_sompi));
-
     let abortable = Abortable::default();
-
     let wallet_secret = Secret::from(secret);
 
     let account = wallet.account()?;
@@ -1002,13 +793,110 @@ async fn send(
         )
         .await?;
 
-    ctx.say(format!(
-        "<@{}> sent <@{}>: {}\nTransaction details: {:?}",
-        author.id, user.id, summary, hashes
-    ))
+    let embed = create_success_embed(
+        "Transaction Successful",
+        &format!("<@{}> sent <@{}>: {}", author.id, user.id, summary),
+    )
+    .field("Txid", format!("{:?}", hashes), false);
+
+    // mention the user
+    ctx.send(CreateReply {
+        reply: false,
+        content: Some(format!("<@{}>", user.id)),
+        embeds: vec![embed],
+        ephemeral: Some(false),
+        ..Default::default()
+    })
     .await?;
 
     Ok(())
+}
+
+#[poise::command(slash_command, category = "wallet")]
+/// withdraw funds to a custom Spectre address
+async fn withdraw(
+    ctx: Context<'_>,
+    #[description = "Spectre wallet address"] address: String,
+    #[description = "Amount"] amount: String,
+    #[min_length = 10]
+    #[description = "Wallet secret"]
+    secret: String,
+) -> Result<(), Error> {
+    let recipient_address = match Address::try_from(address.as_str()) {
+        Ok(address) => address,
+        Err(_) => {
+            let embed =
+                create_error_embed("Error while withdrawing funds", "Invalid Spectre address");
+            return send_reply(ctx, embed, true).await;
+        }
+    };
+
+    let amount_sompi = try_parse_required_nonzero_spectre_as_sompi_u64(Some(amount))?;
+
+    let author = ctx.author();
+    let wallet_owner_identifier = author.id.to_string();
+    let tip_context = ctx.data();
+
+    let is_opened = tip_context.does_opened_owned_wallet_exists(&wallet_owner_identifier);
+    let is_initiated = match is_opened {
+        true => true,
+        false => {
+            tip_context
+                .local_store()?
+                .exists(Some(&wallet_owner_identifier))
+                .await?
+        }
+    };
+
+    if !is_initiated {
+        let embed = create_error_embed("Error", "Wallet not initiated yet");
+        return send_reply(ctx, embed, true).await;
+    }
+
+    if !is_opened {
+        let embed = create_error_embed("Error", "Wallet not opened");
+        return send_reply(ctx, embed, true).await;
+    }
+
+    let tip_wallet = match tip_context.get_opened_owned_wallet(&wallet_owner_identifier) {
+        Some(w) => w,
+        None => {
+            let embed = create_error_embed("Error", "Unexpected error: wallet not opened");
+            return send_reply(ctx, embed, true).await;
+        }
+    };
+
+    let wallet = tip_wallet.wallet();
+
+    let outputs = PaymentOutputs::from((recipient_address.clone(), amount_sompi));
+    let abortable = Abortable::default();
+    let wallet_secret = Secret::from(secret);
+
+    let account = wallet.account()?;
+
+    let (summary, hashes) = account
+        .send(
+            outputs.into(),
+            i64::from(0).into(),
+            None,
+            wallet_secret,
+            None,
+            &abortable,
+            Some(Arc::new(
+                move |ptx: &spectre_wallet_core::tx::PendingTransaction| {
+                    println!("tx notifier: {:?}", ptx);
+                },
+            )),
+        )
+        .await?;
+
+    let embed = create_success_embed(
+        "Withdrawal Successful",
+        &format!("Withdrew to address `{}`: {}", recipient_address, summary),
+    )
+    .field("Txid", format!("{:?}", hashes), false);
+
+    send_reply(ctx, embed, true).await
 }
 
 #[tokio::main]
