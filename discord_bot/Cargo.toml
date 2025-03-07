@@ -6,7 +6,7 @@ edition = "2021"
 [dependencies]
 tokio = { version = "1", features = ["full"] }
 poise = { version = "0.6.1" }
-core = { path = "../../libs/core" }
+core = { path = "../libs/core" }
 spectre-wrpc-client = { git = "https://github.com/spectre-project/rusty-spectre.git", branch = "main" }
 spectre-wallet-core = { git = "https://github.com/spectre-project/rusty-spectre.git", branch = "main" }
 spectre-wallet-keys = { git = "https://github.com/spectre-project/rusty-spectre.git", branch = "main" }
