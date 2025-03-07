@@ -901,15 +901,8 @@ async fn send(
 
     let recipient_identifier = user.id.to_string();
 
-    let response = format!(
-        "{}'s account was created at {}",
-        user.name,
-        user.created_at()
-    );
-    ctx.say(response).await?;
-
-    let author = ctx.author().id;
-    let wallet_owner_identifier = author.to_string();
+    let author = ctx.author();
+    let wallet_owner_identifier = author.id.to_string();
 
     let tip_context = ctx.data();
 
@@ -957,7 +950,7 @@ async fn send(
             let transition_wallet_result = tip_context
                 .transition_wallet_metadata_store
                 .find_transition_wallet_metadata_by_identifier_couple(
-                    &author.to_string(),
+                    &author.id.to_string(),
                     &recipient_identifier,
                 )
                 .await?;
@@ -966,7 +959,7 @@ async fn send(
                 Some(wallet) => wallet.receive_address,
                 None => TipTransitionWallet::create(
                     tip_context.clone(),
-                    &author.to_string(),
+                    &author.id.to_string(),
                     &recipient_identifier,
                 )
                 .await?
@@ -1009,7 +1002,11 @@ async fn send(
         )
         .await?;
 
-    ctx.say(format!("{summary} {:?}", hashes)).await?;
+    ctx.say(format!(
+        "<@{}> sent <@{}>: {}\nTransaction details: {:?}",
+        author.id, user.id, summary, hashes
+    ))
+    .await?;
 
     Ok(())
 }
