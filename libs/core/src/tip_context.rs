@@ -55,7 +55,7 @@ impl TipContext {
     }
 
     pub fn network_id(&self) -> NetworkId {
-        self.network_id.clone()
+        self.network_id
     }
 
     pub fn resolver(&self) -> Resolver {
@@ -63,12 +63,11 @@ impl TipContext {
     }
 
     pub fn get_opened_owned_wallet_rw_lock(&self) -> &RwLock<HashMap<String, TipOwnedWallet>> {
-        return &self.opened_owned_wallets;
+        &self.opened_owned_wallets
     }
 
     pub fn does_opened_owned_wallet_exists(&self, identifier: &str) -> bool {
         let read_lock = self.opened_owned_wallets.read().unwrap();
-
         read_lock.contains_key(identifier)
     }
 
@@ -77,10 +76,7 @@ impl TipContext {
      */
     pub fn get_opened_owned_wallet(&self, identifier: &str) -> Option<TipOwnedWallet> {
         let read_lock = self.opened_owned_wallets.read().unwrap();
-
-        let wallet_result = read_lock.get(identifier);
-
-        wallet_result.cloned()
+        read_lock.get(identifier).cloned()
     }
 
     pub fn add_opened_owned_wallet(
@@ -90,8 +86,7 @@ impl TipContext {
     ) -> TipOwnedWallet {
         let mut lock = self.opened_owned_wallets.write().unwrap();
         lock.insert(identifier, wallet.clone());
-
-        return wallet;
+        wallet
     }
 
     /*
@@ -99,9 +94,7 @@ impl TipContext {
      */
     pub fn remove_opened_owned_wallet(&self, identifier: &str) -> Option<TipOwnedWallet> {
         let mut lock = self.opened_owned_wallets.write().unwrap();
-        let tip_wallet_result = lock.remove(identifier);
-
-        tip_wallet_result
+        lock.remove(identifier)
     }
 
     /*

@@ -1,9 +1,12 @@
 use std::{sync::Arc, time::SystemTime};
 
+use crate::error::Error;
 use crate::tip_context::TipContext;
 use crate::{owned_wallet_metadata::OwnedWalletMetadata, result::Result};
 use spectre_addresses::Address;
 use spectre_wallet_core::{
+    api::WalletApi,
+    deterministic::bip32::BIP32_ACCOUNT_KIND,
     prelude::{EncryptionKind, Language, Mnemonic, WordCount},
     rpc::{Rpc, RpcCtl},
     storage::PrvKeyData,
@@ -55,9 +58,7 @@ impl TipOwnedWallet {
 
         wallet_arc.store().batch().await?;
 
-        wallet_arc
-            .create_wallet(&wallet_secret, wallet_args)
-            .await?;
+        wallet_arc.create_wallet(wallet_secret, wallet_args).await?;
 
         let prv_key_data = PrvKeyData::try_from_mnemonic(
             mnemonic.clone(),
@@ -80,9 +81,13 @@ impl TipOwnedWallet {
 
         let receive_address = account.receive_address()?;
 
-        wallet_arc.store().flush(&wallet_secret).await?;
+        wallet_arc.store().flush(wallet_secret).await?;
 
-        wallet_arc.activate_accounts(None).await?;
+        {
+            let guard = wallet_arc.guard();
+            let guard = guard.lock().await;
+            wallet_arc.activate_accounts(None, &guard).await?;
+        }
 
         wallet_arc.autoselect_default_account_if_single().await?;
 
@@ -101,7 +106,7 @@ impl TipOwnedWallet {
         let tip_owned_wallet =
             tip_context.add_opened_owned_wallet(owned_identifier.into(), tip_wallet);
 
-        return Ok((tip_owned_wallet, mnemonic));
+        Ok((tip_owned_wallet, mnemonic))
     }
 
     pub async fn open(
@@ -119,11 +124,20 @@ impl TipOwnedWallet {
         let wallet_arc = Arc::new(wallet.clone());
 
         let args = WalletOpenArgs::default_with_legacy_accounts();
-        wallet_arc
-            .open(&wallet_secret, Some(owned_identifier.into()), args)
-            .await?;
 
-        wallet_arc.activate_accounts(None).await?;
+        {
+            let guard = wallet_arc.guard();
+            let guard = guard.lock().await;
+            wallet_arc
+                .open(wallet_secret, Some(owned_identifier.into()), args, &guard)
+                .await?;
+        }
+
+        {
+            let guard = wallet_arc.guard();
+            let guard = guard.lock().await;
+            wallet_arc.activate_accounts(None, &guard).await?;
+        }
 
         wallet_arc.autoselect_default_account_if_single().await?;
 
@@ -136,7 +150,7 @@ impl TipOwnedWallet {
         let tip_owned_wallet =
             tip_context.add_opened_owned_wallet(owned_identifier.into(), tip_wallet);
 
-        return Ok(tip_owned_wallet);
+        Ok(tip_owned_wallet)
     }
 
     /**
@@ -169,9 +183,7 @@ impl TipOwnedWallet {
 
         wallet_arc.store().batch().await?;
 
-        wallet_arc
-            .create_wallet(&wallet_secret, wallet_args)
-            .await?;
+        wallet_arc.create_wallet(wallet_secret, wallet_args).await?;
 
         let prv_key_data = PrvKeyData::try_from_mnemonic(
             mnemonic.clone(),
@@ -194,9 +206,14 @@ impl TipOwnedWallet {
 
         let receive_address = account.receive_address()?;
 
-        wallet_arc.store().flush(&wallet_secret).await?;
+        wallet_arc.store().flush(wallet_secret).await?;
 
-        wallet_arc.activate_accounts(None).await?;
+        {
+            let guard = wallet_arc.guard();
+            let guard = guard.lock().await;
+            wallet_arc.activate_accounts(None, &guard).await?;
+        }
+
         wallet_arc.autoselect_default_account_if_single().await?;
 
         let tip_owned_wallet =
@@ -220,7 +237,7 @@ impl TipOwnedWallet {
         let tip_owned_wallet =
             tip_context.add_opened_owned_wallet(owned_identifier.into(), tip_owned_wallet);
 
-        return Ok(tip_owned_wallet);
+        Ok(tip_owned_wallet)
     }
 
     pub fn owned_identifier(&self) -> &str {
@@ -255,6 +272,42 @@ impl TipOwnedWallet {
 
         Ok(self)
     }
+
+    /// change secret
+    pub async fn change_secret(&self, old_secret: &Secret, new_secret: &Secret) -> Result<()> {
+        self.wallet
+            .clone()
+            .wallet_change_secret(old_secret.clone(), new_secret.clone())
+            .await?;
+        Ok(())
+    }
+
+    /// export mnemonic with xpub
+    pub async fn export_mnemonic_and_xpub(
+        &self,
+        wallet_secret: &Secret,
+    ) -> Result<(Option<Mnemonic>, String)> {
+        let account = self.wallet.account()?;
+        let prv_key_data_id = account.prv_key_data_id()?;
+
+        let prv_key_data_store = self.wallet.store().as_prv_key_data_store()?;
+        let prv_key_data = prv_key_data_store
+            .load_key_data(wallet_secret, prv_key_data_id)
+            .await?
+            .ok_or(Error::OwnedWalletNotFound())?;
+
+        let mnemonic = prv_key_data
+            .as_mnemonic(None)
+            .map_err(|_| Error::OwnedWalletNotFound())?;
+
+        let xpub_key = prv_key_data
+            .create_xpub(None, BIP32_ACCOUNT_KIND.into(), 0)
+            .await?;
+
+        let xpub_formatted = self.wallet.network_format_xpub(&xpub_key);
+
+        Ok((mnemonic, xpub_formatted))
+    }
 }
 
 pub struct TipTransitionWallet {
@@ -263,7 +316,7 @@ pub struct TipTransitionWallet {
 
 impl TipTransitionWallet {
     pub fn create() -> TipTransitionWallet {
-        return TipTransitionWallet { text: "ok".into() };
+        TipTransitionWallet { text: "ok".into() }
     }
 }
 
