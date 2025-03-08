@@ -1,11 +1,10 @@
-use std::{env, str::FromStr, sync::Arc, time::Duration};
+use std::{env, path::Path, str::FromStr, sync::Arc, time::Duration};
 
 use core::{
     error::Error as SpectreError, tip_context::TipContext, tip_owned_wallet::TipOwnedWallet,
     tip_transition_wallet::TipTransitionWallet,
     utils::try_parse_required_nonzero_spectre_as_sompi_u64,
 };
-use directories::BaseDirs;
 use futures::future::join_all;
 use poise::{
     serenity_prelude::{self as serenity, Colour, CreateEmbed},
@@ -912,8 +911,11 @@ async fn withdraw(
 
 #[tokio::main]
 async fn main() {
-    // env
-    dotenvy::dotenv().unwrap();
+    // load local .env or ignore if file doesn't exists
+    match dotenvy::dotenv() {
+        Ok(_) => println!("Environment variables loaded from .env"),
+        Err(_) => println!("Not loading environement variables from .env"),
+    }
 
     let discord_token = match env::var("DISCORD_TOKEN") {
         Ok(v) => v,
@@ -979,11 +981,7 @@ async fn main() {
         }
     }
 
-    // @TODO(@izio): create the folder if it doesn't exists, on first run it crash otherwise
-    let wallet_data_path_buf = BaseDirs::new()
-        .unwrap()
-        .data_dir()
-        .join(wallet_data_path_str.clone());
+    let wallet_data_path_buf = Path::new(&wallet_data_path_str).to_path_buf();
 
     let tip_context = TipContext::try_new_arc(
         resolver,

@@ -1,0 +1,11 @@
+Dockerfile
+dist
+node_modules
+target
+.nx
+.github
+.env
+.env.example
+.gitignore
+LICENSE
+README.md
