@@ -96,7 +96,9 @@ impl TipTransitionWallet {
 
         wallet_arc.store().flush(&wallet_secret).await?;
 
-        wallet_arc.activate_accounts(None).await?;
+        let guard = wallet_arc.guard();
+        let guard = guard.lock().await;
+        wallet_arc.activate_accounts(None, &guard).await?;
 
         wallet_arc.autoselect_default_account_if_single().await?;
 
@@ -112,7 +114,7 @@ impl TipTransitionWallet {
         tip_context
             .transition_wallet_metadata_store
             .add(&TransitionWalletMetadata::new(
-                wallet_identifier.into(),
+                wallet_identifier,
                 target_identifier.into(),
                 initiator_identifier.into(),
                 tip_wallet.receive_address(),
@@ -120,7 +122,7 @@ impl TipTransitionWallet {
             ))
             .await?;
 
-        return Ok(tip_wallet);
+        Ok(tip_wallet)
     }
 
     pub async fn open(
@@ -142,11 +144,20 @@ impl TipTransitionWallet {
         let wallet_arc = Arc::new(wallet.clone());
 
         let args = WalletOpenArgs::default_with_legacy_accounts();
-        wallet_arc
-            .open(&wallet_secret, Some(wallet_identifier), args)
-            .await?;
 
-        wallet_arc.activate_accounts(None).await?;
+        {
+            let guard = wallet_arc.guard();
+            let guard = guard.lock().await;
+            wallet_arc
+                .open(wallet_secret, Some(wallet_identifier), args, &guard)
+                .await?;
+        }
+
+        {
+            let guard = wallet_arc.guard();
+            let guard = guard.lock().await;
+            wallet_arc.activate_accounts(None, &guard).await?;
+        }
 
         wallet_arc.autoselect_default_account_if_single().await?;
 
@@ -161,7 +172,7 @@ impl TipTransitionWallet {
 
         tip_wallet.bind_rpc(&tip_context).await?;
 
-        return Ok(tip_wallet);
+        Ok(tip_wallet)
     }
 
     pub fn target_identifier(&self) -> &str {

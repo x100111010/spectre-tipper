@@ -1,9 +1,8 @@
-
 [workspace]
 resolver = '2'
 members = [
-	'apps/discord_bot',
-	'libs/core',
+    'discord_bot',
+    'libs/core',
 ]
 
 [profile.release]

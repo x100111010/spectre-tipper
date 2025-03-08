@@ -40,7 +40,7 @@ impl OwnedWalletMetadataStore {
             Err(_) => {
                 let mut created_file = File::create(path)?;
 
-                created_file.write(b"[]");
+                created_file.write(b"[]")?;
 
                 File::open(path)?
             }
@@ -72,7 +72,7 @@ impl OwnedWalletMetadataStore {
 
         serde_json::to_writer(file, &copied)?;
 
-        return Ok(());
+        Ok(())
     }
 
     pub async fn remove_by_owner_identifier(&self, owner_identifier: String) -> Result<()> {
@@ -94,24 +94,24 @@ impl OwnedWalletMetadataStore {
 
         serde_json::to_writer(file, &copied)?;
 
-        return Ok(());
+        Ok(())
     }
 
-    pub async fn find_owned_wallet_metadata_by_recipiant_address(
+    pub async fn find_owned_wallet_metadata_by_recipient_address(
         &self,
-        recipiant: Address,
+        recipient: Address,
     ) -> Result<OwnedWalletMetadata> {
         let all_metadata = self.metadata.read().await;
         let metadata_option: Option<OwnedWalletMetadata> = all_metadata
             .iter()
-            .cloned()
-            .find(|metadata| metadata.receive_address == recipiant);
+            .find(|&metadata| metadata.receive_address == recipient)
+            .cloned();
 
         if metadata_option.is_none() {
             return Err(Error::OwnedWalletNotFound());
         }
 
-        return Ok(metadata_option.unwrap());
+        Ok(metadata_option.unwrap())
     }
 
     pub async fn find_owned_wallet_metadata_by_owner_identifier(
@@ -121,13 +121,13 @@ impl OwnedWalletMetadataStore {
         let all_metadata = self.metadata.read().await;
         let metadata_option: Option<OwnedWalletMetadata> = all_metadata
             .iter()
-            .cloned()
-            .find(|metadata| metadata.owner_identifier == owner_identifier);
+            .find(|metadata| metadata.owner_identifier == owner_identifier)
+            .cloned();
 
         if metadata_option.is_none() {
             return Err(Error::OwnedWalletNotFound());
         }
 
-        return Ok(metadata_option.unwrap());
+        Ok(metadata_option.unwrap())
     }
 }
