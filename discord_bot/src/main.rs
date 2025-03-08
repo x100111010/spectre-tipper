@@ -18,6 +18,7 @@ use spectre_wallet_core::{
     rpc::ConnectOptions,
     settings::application_folder,
     tx::{Fees, PaymentOutputs},
+    utils::sompi_to_spectre_string_with_suffix,
 };
 use spectre_wallet_keys::secret::Secret;
 use spectre_wrpc_client::{prelude::NetworkId, Resolver, SpectreRpcClient, WrpcEncoding};
@@ -274,13 +275,18 @@ async fn status(ctx: Context<'_>) -> Result<(), Error> {
     .into_iter()
     .reduce(|a, b| a + b);
 
+    let network_type = tip_context.network_id();
+    let balance_formatted = sompi_to_spectre_string_with_suffix(balance, &network_type);
+    let pending_transition_balance_formatted =
+        sompi_to_spectre_string_with_suffix(pending_transition_balance.unwrap_or(0), &network_type);
+
     let embed = create_success_embed("Wallet Status", "")
         .field("Is Opened", is_opened.to_string(), true)
         .field("Is Initiated", is_initiated.to_string(), true)
-        .field("Balance (in sompis)", balance.to_string(), true)
+        .field("Balance", balance_formatted, true)
         .field(
             "Pending Transition Balance",
-            pending_transition_balance.unwrap_or(0).to_string(),
+            pending_transition_balance_formatted,
             true,
         );
 
