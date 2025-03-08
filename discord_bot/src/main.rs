@@ -1,4 +1,4 @@
-use std::{env, str::FromStr, sync::Arc};
+use std::{env, str::FromStr, sync::Arc, time::Duration};
 
 use core::{
     error::Error as SpectreError, tip_context::TipContext, tip_owned_wallet::TipOwnedWallet,
@@ -21,7 +21,11 @@ use spectre_wallet_core::{
     utils::sompi_to_spectre_string_with_suffix,
 };
 use spectre_wallet_keys::secret::Secret;
-use spectre_wrpc_client::{prelude::NetworkId, Resolver, SpectreRpcClient, WrpcEncoding};
+use spectre_wrpc_client::{
+    prelude::{ConnectStrategy, GetServerInfoResponse, NetworkId, RpcApi},
+    Resolver, SpectreRpcClient, WrpcEncoding,
+};
+
 use workflow_core::abortable::Abortable;
 
 type Error = Box<dyn std::error::Error + Send + Sync>;
@@ -946,14 +950,34 @@ async fn main() {
         .unwrap(),
     );
 
-    wrpc_client
+    let connect_timeout = Duration::from_secs(5);
+
+    match wrpc_client
         .connect(Some(ConnectOptions {
             url: forced_spectre_node.clone(),
             block_async_connect: true,
+            connect_timeout: Some(connect_timeout),
+            strategy: ConnectStrategy::Fallback,
             ..Default::default()
         }))
         .await
-        .unwrap();
+    {
+        Ok(_) => println!("Successfully connected to the node."),
+        Err(e) => {
+            eprintln!("Failed to connect to the node: {}", e);
+            panic!("Connection failed: {}", e);
+        }
+    }
+
+    match check_node_status(&wrpc_client).await {
+        Ok(_) => {
+            println!("Successfully completed client connection to the Spectre node!");
+        }
+        Err(error) => {
+            eprintln!("An error occurred: {}", error);
+            std::process::exit(1);
+        }
+    }
 
     // @TODO(@izio): create the folder if it doesn't exists, on first run it crash otherwise
     let wallet_data_path_buf = BaseDirs::new()
@@ -992,4 +1016,27 @@ async fn main() {
         .framework(framework)
         .await;
     client.unwrap().start().await.unwrap();
+}
+
+async fn check_node_status(
+    wrpc_client: &Arc<SpectreRpcClient>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let GetServerInfoResponse {
+        is_synced,
+        server_version,
+        network_id,
+        has_utxo_index,
+        ..
+    } = wrpc_client.get_server_info().await?;
+
+    println!("Node version: {}", server_version);
+    println!("Network: {}", network_id);
+    println!("is synced: {}", is_synced);
+    println!("is indexing UTXOs: {}", has_utxo_index);
+
+    if is_synced {
+        Ok(())
+    } else {
+        Err("Node is not synced".into())
+    }
 }
