@@ -334,12 +334,6 @@ async fn claim(ctx: Context<'_>) -> Result<(), Error> {
     let wallet = tip_wallet.wallet();
     let owner_receive_address = wallet.account().unwrap().receive_address().unwrap();
 
-    let embed = create_success_embed(
-        "Owned Wallet Address",
-        &format!("{}", owner_receive_address.address_to_string()),
-    );
-    send_reply(ctx, embed, true).await?;
-
     let transition_wallets = tip_context
         .transition_wallet_metadata_store
         .find_transition_wallet_metadata_by_target_identifier(&wallet_owner_identifier)
@@ -447,6 +441,15 @@ async fn claim(ctx: Context<'_>) -> Result<(), Error> {
                             .unwrap();
 
                         println!("summary {:?}, hashes: {:?}", summary, hashes);
+
+                        let embed = create_success_embed(
+                            "Successfully claimed funds from transition wallets.",
+                            &format!(
+                                "is opened: {}\nis initiated: {}\n summary {:?}\n hashes: {:?}",
+                                is_opened, is_initiated, summary, hashes
+                            ),
+                        );
+                        send_reply(ctx.clone(), embed, true).await?;
                     }
                 }
             }
@@ -454,14 +457,12 @@ async fn claim(ctx: Context<'_>) -> Result<(), Error> {
                 println!("warning: {:?}", e);
             }
         };
+
+        Ok::<(), Error>(())
     }))
     .await;
 
-    let embed = create_success_embed(
-        "Successfully claimed funds from transition wallets.",
-        &format!("is opened: {}\nis initiated: {}", is_opened, is_initiated),
-    );
-    send_reply(ctx, embed, true).await
+    Ok(())
 }
 
 #[derive(Debug, poise::Modal)]
