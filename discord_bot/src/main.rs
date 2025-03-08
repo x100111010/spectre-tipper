@@ -539,6 +539,13 @@ async fn destroy(ctx: Context<'_>) -> Result<(), Error> {
     send_reply(ctx, embed, true).await
 }
 
+#[derive(Debug, poise::Modal)]
+#[name = "Webwallet/Spectre-Desktop not supported!"]
+struct RestorationModalConfirmation {
+    #[name = "write yes to confirm"]
+    confirmation_input: String,
+}
+
 #[poise::command(slash_command)]
 /// restore (bip32) wallet from the mnemonic
 async fn restore(
@@ -575,24 +582,33 @@ async fn restore(
 
     let tip_context = ctx.data();
 
-    let recovered_tip_wallet_result = TipOwnedWallet::restore(
-        tip_context.clone(),
-        &Secret::from(secret),
-        mnemonic,
-        &wallet_owner_identifier,
-    )
-    .await?;
+    let result = RestorationModalConfirmation::execute(ctx).await?;
 
-    let embed = create_success_embed(
-        "Wallet Restored Successfully",
-        "Your wallet has been restored from the mnemonic phrase",
-    )
-    .field(
-        "Receive Address",
-        recovered_tip_wallet_result.receive_address().to_string(),
-        false,
-    );
+    if let Some(data) = result {
+        if data.confirmation_input.to_lowercase() == "yes" {
+            let recovered_tip_wallet_result = TipOwnedWallet::restore(
+                tip_context.clone(),
+                &Secret::from(secret),
+                mnemonic,
+                &wallet_owner_identifier,
+            )
+            .await?;
 
+            let embed = create_success_embed(
+                "Wallet Restored Successfully",
+                "Your wallet has been restored from the mnemonic phrase",
+            )
+            .field(
+                "Receive Address",
+                recovered_tip_wallet_result.receive_address().to_string(),
+                false,
+            );
+
+            return send_reply(ctx, embed, true).await;
+        }
+    }
+
+    let embed = create_embed("Wallet Restoration Aborted", "", Colour::DARK_ORANGE);
     send_reply(ctx, embed, true).await
 }
 
