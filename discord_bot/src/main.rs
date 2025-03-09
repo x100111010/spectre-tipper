@@ -787,7 +787,7 @@ async fn send(
 
     let account = wallet.account()?;
 
-    let (summary, hashes) = account
+    let (summary, hashes) = match account
         .send(
             outputs.into(),
             i64::from(0).into(),
@@ -801,7 +801,14 @@ async fn send(
                 },
             )),
         )
-        .await?;
+        .await
+    {
+        Ok(result) => result,
+        Err(e) => {
+            let embed = create_error_embed("Error", &format!("Transaction failed: {}", e));
+            return send_reply(ctx, embed, true).await;
+        }
+    };
 
     let embed = create_success_embed(
         "Transaction Successful",
@@ -888,7 +895,7 @@ async fn withdraw(
 
     let account = wallet.account()?;
 
-    let (summary, hashes) = account
+    let (summary, hashes) = match account
         .send(
             outputs.into(),
             i64::from(0).into(),
@@ -902,7 +909,14 @@ async fn withdraw(
                 },
             )),
         )
-        .await?;
+        .await
+    {
+        Ok(result) => result,
+        Err(e) => {
+            let embed = create_error_embed("Error", &format!("Withdrawal failed: {}", e));
+            return send_reply(ctx, embed, true).await;
+        }
+    };
 
     let embed = create_success_embed(
         "Withdrawal Successful",
