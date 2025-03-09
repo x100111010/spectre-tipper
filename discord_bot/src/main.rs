@@ -7,7 +7,7 @@ use core::{
 };
 use futures::future::join_all;
 use poise::{
-    serenity_prelude::{self as serenity, Colour, CreateEmbed},
+    serenity_prelude::{self as serenity, Colour, CreateEmbed, CreateMessage},
     CreateReply, Modal,
 };
 use tokio::fs;
@@ -809,12 +809,16 @@ async fn send(
     )
     .field("Txid", format!("{:?}", hashes), false);
 
-    // mention the user
+    // public mentionning
+    let public_message = CreateMessage::new()
+        .add_embeds(vec![embed])
+        .content(format!("<@{}>", user.id));
+    ctx.channel_id().send_message(ctx, public_message).await?;
+
+    // private mentionning
     ctx.send(CreateReply {
-        reply: false,
-        content: Some(format!("<@{}>", user.id)),
-        embeds: vec![embed],
-        ephemeral: Some(false),
+        content: Some("Transaction Successful".into()),
+        ephemeral: Some(true),
         ..Default::default()
     })
     .await?;
