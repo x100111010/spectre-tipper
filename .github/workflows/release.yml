@@ -1,6 +1,6 @@
-on:
-  release:
-    types: [published]
+# on:
+#   release:
+#     types: [published]
 # jobs:
 #   release:
 #     name: release ${{ matrix.target }}
