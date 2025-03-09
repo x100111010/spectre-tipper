@@ -6,6 +6,9 @@ tmp
 /out-tsc
 /target
 
+transitions.json
+owned.json
+
 # dependencies
 node_modules
 
