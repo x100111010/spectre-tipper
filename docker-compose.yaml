@@ -1,6 +1,6 @@
 services:
   discord-bot:
-    image: iziodev/spectre-tipper:v0.0.7
+    image: ghcr.io/iziodev/spectre-tipper:v0.1.0
     volumes:
       - wallet-data:/spectre-tipper-wallets
     environment:
@@ -8,7 +8,7 @@ services:
       SPECTRE_NETWORK: "mainnet"
       WALLET_DATA_PATH: "spectre-tipper-wallets"
       RUST_BACKTRACE: "full"
-      FORCE_SPECTRE_NODE_ADDRESS: "ws://157.173.125.208:17210"
+      FORCE_SPECTRE_NODE_ADDRESS: "${FORCE_SPECTRE_NODE_ADDRESS}"
 
 volumes:
   wallet-data:
