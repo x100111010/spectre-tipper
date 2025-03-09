@@ -1,0 +1,14 @@
+services:
+  discord-bot:
+    image: ghcr.io/iziodev/spectre-tipper:v0.1.0
+    volumes:
+      - wallet-data:/spectre-tipper-wallets
+    environment:
+      DISCORD_TOKEN: "${DISCORD_TOKEN}"
+      SPECTRE_NETWORK: "mainnet"
+      WALLET_DATA_PATH: "spectre-tipper-wallets"
+      RUST_BACKTRACE: "full"
+      FORCE_SPECTRE_NODE_ADDRESS: "${FORCE_SPECTRE_NODE_ADDRESS}"
+
+volumes:
+  wallet-data:
