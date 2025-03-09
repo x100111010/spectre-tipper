@@ -1,6 +1,6 @@
 [package]
 name = "discord_bot"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 
 [dependencies]
@@ -10,9 +10,6 @@ core = { path = "../libs/core" }
 spectre-wrpc-client = { git = "https://github.com/spectre-project/rusty-spectre.git", branch = "main" }
 spectre-wallet-core = { git = "https://github.com/spectre-project/rusty-spectre.git", branch = "main" }
 spectre-wallet-keys = { git = "https://github.com/spectre-project/rusty-spectre.git", branch = "main" }
-spectre-addresses = { git = "https://github.com/spectre-project/rusty-spectre.git", branch = "main" }
-spectre-wrpc-wasm = { git = "https://github.com/spectre-project/rusty-spectre.git", branch = "main" }
 workflow-core = { version = "0.18.0" }
 futures = "0.3.31"
 dotenvy = "0.15.7"
-directories = "6.0.0"
