@@ -1,5 +1,9 @@
 use std::fmt::Display;
 
+use spectre_bip32::secp256k1::rand::{
+    self,
+    distributions::{Alphanumeric, DistString},
+};
 use spectre_consensus_core::constants::SOMPI_PER_SPECTRE;
 
 use crate::{error::Error, result::Result};
@@ -30,4 +34,8 @@ pub fn try_parse_required_nonzero_spectre_as_sompi_u64<S: ToString + Display>(
     } else {
         Err(Error::custom("Missing Spectre amount"))
     }
+}
+
+pub fn generate_random_transition_wallet_secret() -> String {
+    return Alphanumeric.sample_string(&mut rand::thread_rng(), 12);
 }

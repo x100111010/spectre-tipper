@@ -1,6 +1,7 @@
 use std::{sync::Arc, time::SystemTime};
 
 use crate::tip_context::TipContext;
+use crate::utils::generate_random_transition_wallet_secret;
 use crate::{result::Result, transition_wallet_metadata::TransitionWalletMetadata};
 use spectre_addresses::Address;
 use spectre_wallet_core::{
@@ -41,8 +42,7 @@ impl TipTransitionWallet {
         initiator_identifier: &str,
         target_identifier: &str,
     ) -> Result<TipTransitionWallet> {
-        // @TODO(izio): generate randomly
-        let secret_str: String = "test_secret".into();
+        let secret_str: String = generate_random_transition_wallet_secret();
 
         let wallet_secret = Secret::from(secret_str.clone());
         let wallet_identifier =
