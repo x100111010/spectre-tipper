@@ -993,6 +993,7 @@ dependencies = [
  "spectre-wallet-keys",
  "spectre-wrpc-client",
  "tokio",
+ "tracing",
  "workflow-core",
 ]
 
