@@ -13,3 +13,4 @@ spectre-wallet-keys = { git = "https://github.com/spectre-project/rusty-spectre.
 workflow-core = { version = "0.18.0" }
 futures = "0.3.31"
 dotenvy = "0.15.7"
+tracing = "0.1"

@@ -7,8 +7,9 @@ use core::{
 };
 use futures::future::join_all;
 use poise::{
+    samples::on_error,
     serenity_prelude::{self as serenity, Colour, CreateEmbed, CreateMessage},
-    CreateReply, Modal,
+    CreateReply, FrameworkError, Modal,
 };
 use tokio::fs;
 
@@ -1017,6 +1018,38 @@ async fn main() {
     let framework = poise::Framework::builder()
         .options(poise::FrameworkOptions {
             commands: vec![wallet()],
+            on_error: |error| {
+                Box::pin(async move {
+                    match error {
+                        // set ephemeral to true by default on unexpected command error (avoid data leaks on unhandled errors)
+                        FrameworkError::Command { ctx, error, .. } => {
+                            let error = error.to_string();
+                            eprintln!("An error occured in a command: {}", error);
+
+                            let embed =
+                                create_error_embed("Error", &format!("An unexpected error occured, please report bugs to the developers: {}", error));
+                            let send_result = ctx.send(CreateReply {
+                                reply: false,
+                                embeds: vec![embed],
+                                ephemeral: Some(true),
+                                ..Default::default()
+                            })
+                            .await;
+
+                            match send_result {
+                                Ok(_) => return,
+                                _ => eprintln!("Error - Impossible to forward error via Discord, initial error: {}", error),
+                            };
+                        }
+                        // fallback all other error types to the default error handler
+                        _ => {
+                            if let Err(e) = on_error(error).await {
+                                tracing::error!("Error while handling error: {}", e);
+                            }
+                        }
+                    }
+                })
+            },
             ..Default::default()
         })
         .setup(|ctx, _ready, framework| {
