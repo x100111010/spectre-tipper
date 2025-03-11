@@ -12,6 +12,9 @@ pub enum Error {
     WalletError(#[from] spectre_wallet_core::error::Error),
 
     #[error(transparent)]
+    RpcError(#[from] spectre_rpc_core::RpcError),
+
+    #[error(transparent)]
     StdIoError(#[from] std::io::Error),
 
     #[error(transparent)]
