@@ -3,6 +3,7 @@ services:
     image: ghcr.io/iziodev/spectre-tipper:v0.1.0
     volumes:
       - wallet-data:/spectre-tipper-wallets
+      - wallet-store:/root/.spectre/
     environment:
       DISCORD_TOKEN: "${DISCORD_TOKEN}"
       SPECTRE_NETWORK: "mainnet"
@@ -12,3 +13,4 @@ services:
 
 volumes:
   wallet-data:
+  wallet-store:

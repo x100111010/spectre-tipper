@@ -1,9 +1,11 @@
-use std::{env, path::Path, str::FromStr, sync::Arc, time::Duration};
+use std::{env, hash::Hash, path::Path, str::FromStr, sync::Arc, time::Duration};
 
 use core::{
-    error::Error as SpectreError, tip_context::TipContext, tip_owned_wallet::TipOwnedWallet,
+    error::Error as SpectreError,
+    tip_context::TipContext,
+    tip_owned_wallet::TipOwnedWallet,
     tip_transition_wallet::TipTransitionWallet,
-    utils::try_parse_required_nonzero_spectre_as_sompi_u64,
+    utils::{estimate_fees, get_tx_explorer_url, try_parse_required_nonzero_spectre_as_sompi_u64},
 };
 use futures::future::join_all;
 use poise::{
@@ -47,6 +49,10 @@ fn create_success_embed(title: &str, description: &str) -> CreateEmbed {
     create_embed(title, description, Colour::DARK_GREEN)
 }
 
+fn create_warning_embed(title: &str, description: &str) -> CreateEmbed {
+    create_embed(title, description, Colour::ORANGE)
+}
+
 async fn send_reply(ctx: Context<'_>, embed: CreateEmbed, ephemeral: bool) -> Result<(), Error> {
     ctx.send(CreateReply {
         reply: false,
@@ -73,7 +79,8 @@ async fn send_reply(ctx: Context<'_>, embed: CreateEmbed, ephemeral: bool) -> Re
         "send",
         "claim",
         "change_password",
-        "withdraw"
+        "withdraw",
+        "compound"
     ),
     category = "wallet"
 )]
@@ -184,6 +191,7 @@ async fn close(ctx: Context<'_>) -> Result<(), Error> {
         let tip_wallet_result = tip_context.remove_opened_owned_wallet(&wallet_owner_identifier);
 
         if let Some(tip_wallet) = tip_wallet_result {
+            tip_wallet.wallet().stop().await?;
             tip_wallet.wallet().close().await?;
         }
     }
@@ -227,17 +235,13 @@ async fn status(ctx: Context<'_>) -> Result<(), Error> {
         return send_reply(ctx, embed, true).await;
     }
 
-    let balance: u64 = {
-        let mut b: u64 = 0;
-        if let Some(owned_wallet) = tip_context.get_opened_owned_wallet(&wallet_owner_identifier) {
-            if let Ok(account) = owned_wallet.wallet().account() {
-                if let Some(balance) = account.balance() {
-                    b = balance.mature;
-                }
-            }
-        }
-        b
-    };
+    let owned_wallet = tip_context
+        .get_opened_owned_wallet(&wallet_owner_identifier)
+        .unwrap();
+
+    let account = owned_wallet.wallet().account().unwrap();
+
+    let balance = account.balance().unwrap_or_default();
 
     let transition_wallets = tip_context
         .transition_wallet_metadata_store
@@ -280,16 +284,24 @@ async fn status(ctx: Context<'_>) -> Result<(), Error> {
     .reduce(|a, b| a + b);
 
     let network_type = tip_context.network_id();
-    let balance_formatted = sompi_to_spectre_string_with_suffix(balance, &network_type);
+    let balance_formatted = sompi_to_spectre_string_with_suffix(balance.mature, &network_type);
+    let pending_balance_formatted =
+        sompi_to_spectre_string_with_suffix(balance.pending, &network_type);
+
     let pending_transition_balance_formatted =
         sompi_to_spectre_string_with_suffix(pending_transition_balance.unwrap_or(0), &network_type);
 
     let embed = create_success_embed("Wallet Status", "")
-        .field("Is Opened", is_opened.to_string(), true)
-        .field("Is Initiated", is_initiated.to_string(), true)
         .field("Balance", balance_formatted, true)
+        .field("Pending Balance", pending_balance_formatted, true)
+        .field("UTXO count", balance.mature_utxo_count.to_string(), true)
         .field(
-            "Pending Transition Balance",
+            "Pending UTXO count",
+            balance.pending_utxo_count.to_string(),
+            true,
+        )
+        .field(
+            "Balance to be claimed",
             pending_transition_balance_formatted,
             true,
         );
@@ -335,6 +347,8 @@ async fn claim(ctx: Context<'_>) -> Result<(), Error> {
         }
     };
 
+    ctx.defer_ephemeral().await?;
+
     let wallet = tip_wallet.wallet();
     let owner_receive_address = wallet.account().unwrap().receive_address().unwrap();
 
@@ -363,6 +377,8 @@ async fn claim(ctx: Context<'_>) -> Result<(), Error> {
                         b = balance.mature
                     }
                 }
+
+                let _ = tw.wallet().stop().await;
 
                 b
             }
@@ -414,9 +430,23 @@ async fn claim(ctx: Context<'_>) -> Result<(), Error> {
                         let address = receive_address;
 
                         let amount_sompi = balance.mature;
-                        // 10_000 is arbitrary and could/should be estimated before hand
-                        // https://kaspa-mdbook.aspectron.com/transactions/constraints/fees.html
-                        let amount_minus_gas_fee = amount_sompi - 10000;
+
+                        let outputs = PaymentOutputs::from((address.clone(), amount_sompi));
+
+                        let generator_summary_option =
+                            estimate_fees(&account, outputs.clone()).await?;
+
+                        let amount_minus_gas_fee =
+                            match generator_summary_option.final_transaction_amount {
+                                Some(final_transaction_amount) => final_transaction_amount,
+                                None => {
+                                    let embed = create_error_embed(
+                                        "Error",
+                                        "While estimating the transaction fees, final_transaction_amount is None.",
+                                    );
+                                    return send_reply(ctx, embed, true).await;
+                                },
+                            };
 
                         println!(
                             "amount sompi {}, with gas fee {}",
@@ -425,14 +455,13 @@ async fn claim(ctx: Context<'_>) -> Result<(), Error> {
 
                         let outputs = PaymentOutputs::from((address, amount_minus_gas_fee));
                         let abortable = Abortable::default();
-                        let wallet_secret = Secret::from(secret);
 
                         let (summary, hashes) = account
                             .send(
                                 outputs.into(),
-                                Fees::SenderPays(0),
+                                Fees::ReceiverPays(0),
                                 None,
-                                wallet_secret,
+                                secret,
                                 None,
                                 &abortable,
                                 Some(Arc::new(
@@ -448,14 +477,13 @@ async fn claim(ctx: Context<'_>) -> Result<(), Error> {
 
                         let embed = create_success_embed(
                             "Successfully claimed funds from transition wallets.",
-                            &format!(
-                                "is opened: {}\nis initiated: {}\n summary {:?}\n hashes: {:?}",
-                                is_opened, is_initiated, summary, hashes
-                            ),
+                            &format!("summary {:?}\n hashes: {:?}", summary, hashes),
                         );
                         send_reply(ctx.clone(), embed, true).await?;
                     }
                 }
+
+                tw.wallet().stop().await?;
             }
             Err(e) => {
                 println!("warning: {:?}", e);
@@ -740,6 +768,9 @@ async fn send(
         }
     };
 
+    let amount_sompi = try_parse_required_nonzero_spectre_as_sompi_u64(Some(amount))?;
+    println!("amount sompi {}", amount_sompi);
+
     let wallet = tip_wallet.wallet();
 
     // find address of recipient or create a temporary wallet
@@ -779,9 +810,6 @@ async fn send(
 
     let address = recipient_address;
 
-    let amount_sompi = try_parse_required_nonzero_spectre_as_sompi_u64(Some(amount))?;
-    println!("amount sompi {}", amount_sompi);
-
     let outputs = PaymentOutputs::from((address, amount_sompi));
     let abortable = Abortable::default();
     let wallet_secret = Secret::from(password);
@@ -791,7 +819,7 @@ async fn send(
     let (summary, hashes) = match account
         .send(
             outputs.into(),
-            i64::from(0).into(),
+            Fees::SenderPays(0),
             None,
             wallet_secret,
             None,
@@ -811,11 +839,18 @@ async fn send(
         }
     };
 
+    let tx_id = hashes[0].to_string();
+
     let embed = create_success_embed(
         "Transaction Successful",
         &format!("<@{}> sent <@{}>: {}", author.id, user.id, summary),
     )
-    .field("Txid", format!("{:?}", hashes), false);
+    .field("Txid", format!("{:?}", tx_id.clone()), false)
+    .field(
+        "Explorer",
+        get_tx_explorer_url(&tx_id, tip_context.network_id().network_type()),
+        false,
+    );
 
     // public mentionning
     let public_message = CreateMessage::new()
@@ -832,6 +867,81 @@ async fn send(
     .await?;
 
     Ok(())
+}
+
+#[poise::command(slash_command, category = "wallet")]
+/// compound utxo
+async fn compound(
+    ctx: Context<'_>,
+    #[min_length = 10]
+    #[description = "password"]
+    password: String,
+) -> Result<(), Error> {
+    let author = ctx.author();
+    let wallet_owner_identifier = author.id.to_string();
+
+    let tip_context = ctx.data();
+
+    let is_opened = tip_context.does_opened_owned_wallet_exists(&wallet_owner_identifier);
+    let is_initiated = match is_opened {
+        true => true,
+        false => {
+            tip_context
+                .local_store()?
+                .exists(Some(&wallet_owner_identifier))
+                .await?
+        }
+    };
+
+    if !is_initiated {
+        let embed = create_error_embed("Error", "Wallet not initiated yet");
+        return send_reply(ctx, embed, true).await;
+    }
+
+    if !is_opened {
+        let embed = create_error_embed("Error", "Wallet not opened");
+        return send_reply(ctx, embed, true).await;
+    }
+
+    let tip_wallet = match tip_context.get_opened_owned_wallet(&wallet_owner_identifier) {
+        Some(w) => w,
+        None => {
+            let embed = create_error_embed("Error", "Unexpected error: wallet not opened");
+            return send_reply(ctx, embed, true).await;
+        }
+    };
+
+    let wallet = tip_wallet.wallet();
+
+    let abortable = Abortable::default();
+    let wallet_secret = Secret::from(password);
+
+    let embed = create_warning_embed(
+        "Compound in progress",
+        "This may take a while, you can track progress using /wallet status command",
+    );
+    send_reply(ctx, embed, true).await?;
+
+    let compound_result = wallet
+        .account()?
+        .sweep(wallet_secret, None, &abortable, None)
+        .await;
+
+    match compound_result {
+        Err(error) => {
+            let embed = create_error_embed("Error while compounding", &error.to_string());
+            send_reply(ctx, embed, true).await?;
+        }
+        Ok(_) => {
+            let embed = create_success_embed(
+                "Compound completed",
+                "Compounding is completed, existing UTXO's have been merged into one",
+            );
+            send_reply(ctx, embed, true).await?;
+        }
+    }
+
+    return Ok(());
 }
 
 #[poise::command(slash_command, category = "wallet")]
@@ -888,18 +998,36 @@ async fn withdraw(
         }
     };
 
-    let wallet = tip_wallet.wallet();
+    ctx.defer_ephemeral().await?;
 
-    let outputs = PaymentOutputs::from((recipient_address.clone(), amount_sompi));
+    let wallet = tip_wallet.wallet();
+    let account = wallet.account()?;
+
+    let generator_summary_option = estimate_fees(
+        &account,
+        PaymentOutputs::from((recipient_address.clone(), amount_sompi)),
+    )
+    .await?;
+
+    let amount_minus_gas_fee = match generator_summary_option.final_transaction_amount {
+        Some(final_transaction_amount) => final_transaction_amount,
+        None => {
+            let embed = create_error_embed(
+                "Error",
+                "While estimating the transaction fees, final_transaction_amount is None.",
+            );
+            return send_reply(ctx, embed, true).await;
+        }
+    };
+
     let abortable = Abortable::default();
     let wallet_secret = Secret::from(password);
-
-    let account = wallet.account()?;
+    let outputs = PaymentOutputs::from((recipient_address.clone(), amount_minus_gas_fee));
 
     let (summary, hashes) = match account
         .send(
             outputs.into(),
-            i64::from(0).into(),
+            Fees::ReceiverPays(0),
             None,
             wallet_secret,
             None,
@@ -919,11 +1047,18 @@ async fn withdraw(
         }
     };
 
+    let tx_id = hashes[0].to_string();
+
     let embed = create_success_embed(
         "Withdrawal Successful",
         &format!("Withdrew to address `{}`: {}", recipient_address, summary),
     )
-    .field("Txid", format!("{:?}", hashes), false);
+    .field("Txid", format!("{:?}", tx_id.clone()), false)
+    .field(
+        "Explorer",
+        get_tx_explorer_url(&tx_id, tip_context.network_id().network_type()),
+        false,
+    );
 
     send_reply(ctx, embed, true).await
 }

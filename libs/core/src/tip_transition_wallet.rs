@@ -1,12 +1,14 @@
 use std::{sync::Arc, time::SystemTime};
 
 use crate::tip_context::TipContext;
-use crate::utils::generate_random_transition_wallet_secret;
+use crate::utils::{
+    build_transition_wallet_identifier, connect_wallet_to_rpc,
+    generate_random_transition_wallet_secret,
+};
 use crate::{result::Result, transition_wallet_metadata::TransitionWalletMetadata};
 use spectre_addresses::Address;
 use spectre_wallet_core::{
     prelude::{EncryptionKind, Language, Mnemonic, WordCount},
-    rpc::{Rpc, RpcCtl},
     storage::PrvKeyData,
     wallet::{AccountCreateArgsBip32, Wallet, WalletCreateArgs, WalletOpenArgs},
 };
@@ -37,6 +39,9 @@ impl TipTransitionWallet {
         }
     }
 
+    /**
+     * Note: created transition wallet aren't connected to RPC by default, as there is no use for this
+     */
     pub async fn create(
         tip_context: Arc<TipContext>,
         initiator_identifier: &str,
@@ -46,7 +51,7 @@ impl TipTransitionWallet {
 
         let wallet_secret = Secret::from(secret_str.clone());
         let wallet_identifier =
-            format!("transition-{}-{}", target_identifier, initiator_identifier);
+            build_transition_wallet_identifier(target_identifier, initiator_identifier);
 
         let mnemonic = Mnemonic::random(WordCount::Words12, Language::default())?;
         let localstore = Wallet::local_store()?;
@@ -109,8 +114,6 @@ impl TipTransitionWallet {
             receive_address,
         );
 
-        tip_wallet.bind_rpc(&tip_context).await?;
-
         tip_context
             .transition_wallet_metadata_store
             .add(&TransitionWalletMetadata::new(
@@ -134,7 +137,7 @@ impl TipTransitionWallet {
         let localstore = Wallet::local_store()?;
 
         let wallet_identifier =
-            format!("transition-{}-{}", target_identifier, initiator_identifier);
+            build_transition_wallet_identifier(target_identifier, initiator_identifier);
 
         let wallet = Wallet::try_new(
             localstore,
@@ -143,25 +146,31 @@ impl TipTransitionWallet {
         )?;
         let wallet_arc = Arc::new(wallet.clone());
 
+        connect_wallet_to_rpc(&wallet_arc, tip_context.rpc_api()).await?;
+
         let args = WalletOpenArgs::default_with_legacy_accounts();
 
         {
             let guard = wallet_arc.guard();
             let guard = guard.lock().await;
+
             wallet_arc
                 .open(wallet_secret, Some(wallet_identifier), args, &guard)
                 .await?;
-        }
 
-        {
-            let guard = wallet_arc.guard();
-            let guard = guard.lock().await;
+            wallet_arc.start().await?;
+
             wallet_arc.activate_accounts(None, &guard).await?;
+            wallet_arc.autoselect_default_account_if_single().await?;
         }
-
-        wallet_arc.autoselect_default_account_if_single().await?;
 
         let receive_address = wallet_arc.account()?.receive_address()?;
+
+        wallet_arc
+            .account()?
+            .utxo_context()
+            .register_addresses(&vec![receive_address.clone()])
+            .await?;
 
         let tip_wallet = TipTransitionWallet::new(
             initiator_identifier.into(),
@@ -169,8 +178,6 @@ impl TipTransitionWallet {
             wallet_arc,
             receive_address,
         );
-
-        tip_wallet.bind_rpc(&tip_context).await?;
 
         Ok(tip_wallet)
     }
@@ -187,24 +194,10 @@ impl TipTransitionWallet {
         self.receive_address.clone()
     }
 
-    async fn bind_rpc(&self, tip_context: &Arc<TipContext>) -> Result<&Self> {
-        // bind context rpc into wallet
-        let ctl = RpcCtl::new();
-
-        let rpc = Rpc::new(tip_context.rpc_api(), ctl);
-
-        self.wallet.bind_rpc(Some(rpc)).await?;
-
-        // initiate utxo processor and load initiate account balance
-        self.wallet
-            .account()?
-            .utxo_context()
-            .processor()
-            .handle_connect()
-            .await?;
-
-        self.wallet.account()?.scan(None, None).await?;
-
-        Ok(self)
+    pub fn wallet_identifier(&self) -> String {
+        return build_transition_wallet_identifier(
+            &self.target_identifier,
+            &self.initiator_identifier,
+        );
     }
 }

@@ -633,11 +633,13 @@ dependencies = [
 name = "core"
 version = "0.1.0"
 dependencies = [
+ "futures-util",
  "serde",
  "serde_json",
  "spectre-addresses",
  "spectre-bip32",
  "spectre-consensus-core",
+ "spectre-rpc-core",
  "spectre-wallet-core",
  "spectre-wallet-keys",
  "spectre-wrpc-client",
@@ -983,7 +985,7 @@ dependencies = [
 
 [[package]]
 name = "discord_bot"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "core",
  "dotenvy",
