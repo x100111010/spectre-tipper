@@ -72,7 +72,7 @@ async fn send_reply(ctx: Context<'_>, embed: CreateEmbed, ephemeral: bool) -> Re
         "destroy",
         "send",
         "claim",
-        "change_secret",
+        "change_password",
         "withdraw"
     ),
     category = "wallet"
@@ -83,12 +83,12 @@ async fn wallet(_: Context<'_>) -> Result<(), Error> {
 }
 
 #[poise::command(slash_command, category = "wallet")]
-/// create (initiate) a fresh discord wallet with a secret
+/// create (initiate) a fresh discord wallet protected by a password of your choice
 async fn create(
     ctx: Context<'_>,
     #[min_length = 10]
-    #[description = "secret"]
-    secret: String,
+    #[description = "password"]
+    password: String,
 ) -> Result<(), Error> {
     let user = ctx.author().id;
     let wallet_owner_identifier = user.to_string();
@@ -113,7 +113,7 @@ async fn create(
 
     let (tip_wallet, mnemonic) = TipOwnedWallet::create(
         tip_context.clone(),
-        &Secret::from(secret),
+        &Secret::from(password),
         &wallet_owner_identifier,
     )
     .await?;
@@ -126,12 +126,12 @@ async fn create(
 }
 
 #[poise::command(slash_command, category = "wallet")]
-/// open the discord wallet using the secret
+/// open the discord wallet using the password you defined
 async fn open(
     ctx: Context<'_>,
     #[min_length = 10]
-    #[description = "secret"]
-    secret: String,
+    #[description = "password"]
+    password: String,
 ) -> Result<(), Error> {
     let user = ctx.author().id;
     let wallet_owner_identifier = user.to_string();
@@ -149,7 +149,7 @@ async fn open(
 
     let tip_wallet_result = TipOwnedWallet::open(
         tip_context.clone(),
-        &Secret::from(secret),
+        &Secret::from(password),
         &wallet_owner_identifier,
     )
     .await;
@@ -157,7 +157,7 @@ async fn open(
     let tip_wallet = match tip_wallet_result {
         Ok(t) => t,
         Err(SpectreError::WalletError(spectre_wallet_core::error::Error::WalletDecrypt(_))) => {
-            let embed = create_error_embed("Error while opening the wallet", "Secret is wrong");
+            let embed = create_error_embed("Error while opening the wallet", "Password is wrong");
             return send_reply(ctx, embed, true).await;
         }
         Err(error) => return Err(Error::from(error)),
@@ -540,13 +540,13 @@ async fn destroy(ctx: Context<'_>) -> Result<(), Error> {
 }
 
 #[poise::command(slash_command)]
-/// restore (bip32) wallet from the mnemonic
+/// restore (bip32) wallet from the mnemonic protected by a password of your choice
 async fn restore(
     ctx: Context<'_>,
     #[description = "mnemonic"] mnemonic_phrase: String,
     #[min_length = 10]
-    #[description = "new secret"]
-    secret: String,
+    #[description = "new password"]
+    password: String,
 ) -> Result<(), Error> {
     let mnemonic = match Mnemonic::new(mnemonic_phrase.trim(), Language::English) {
         Ok(mnemonic) => {
@@ -577,7 +577,7 @@ async fn restore(
 
     let recovered_tip_wallet_result = TipOwnedWallet::restore(
         tip_context.clone(),
-        &Secret::from(secret),
+        &Secret::from(password),
         mnemonic,
         &wallet_owner_identifier,
     )
@@ -601,8 +601,8 @@ async fn restore(
 async fn export(
     ctx: Context<'_>,
     #[min_length = 10]
-    #[description = "secret"]
-    secret: String,
+    #[description = "password"]
+    password: String,
 ) -> Result<(), Error> {
     let user = ctx.author().id;
     let wallet_owner_identifier = user.to_string();
@@ -621,13 +621,13 @@ async fn export(
 
     let tip_wallet = TipOwnedWallet::open(
         tip_context.clone(),
-        &Secret::from(secret.clone()),
+        &Secret::from(password.clone()),
         &wallet_owner_identifier,
     )
     .await?;
 
     let (mnemonic, xpub) = tip_wallet
-        .export_mnemonic_and_xpub(&Secret::from(secret))
+        .export_mnemonic_and_xpub(&Secret::from(password))
         .await?;
 
     if let Some(mnemonic) = mnemonic {
@@ -642,15 +642,15 @@ async fn export(
 }
 
 #[poise::command(slash_command, category = "wallet")]
-/// change secret
-async fn change_secret(
+/// change wallet password
+async fn change_password(
     ctx: Context<'_>,
     #[min_length = 10]
-    #[description = "Old secret"]
-    old_secret: String,
+    #[description = "Old password"]
+    old_password: String,
     #[min_length = 10]
-    #[description = "New secret"]
-    new_secret: String,
+    #[description = "New password"]
+    new_password: String,
 ) -> Result<(), Error> {
     let user = ctx.author().id;
     let wallet_owner_identifier = user.to_string();
@@ -659,7 +659,7 @@ async fn change_secret(
 
     if !tip_context.does_opened_owned_wallet_exists(&wallet_owner_identifier) {
         let embed = create_error_embed(
-            "Error while changing the wallet secret",
+            "Error while changing the wallet password",
             "Wallet is not opened.",
         );
         return send_reply(ctx, embed, true).await;
@@ -671,17 +671,17 @@ async fn change_secret(
 
     // change secret
     match tip_wallet
-        .change_secret(&Secret::from(old_secret), &Secret::from(new_secret))
+        .change_secret(&Secret::from(old_password), &Secret::from(new_password))
         .await
     {
         Ok(_) => {
-            let embed = create_success_embed("Success", "Secret changed successfully.");
+            let embed = create_success_embed("Success", "Password changed successfully.");
             send_reply(ctx, embed, true).await
         }
         Err(SpectreError::WalletError(spectre_wallet_core::error::Error::WalletDecrypt(_))) => {
             let embed = create_error_embed(
-                "Error while changing the wallet secret",
-                "Old secret is incorrect",
+                "Error while changing the wallet password",
+                "Old password is incorrect",
             );
             send_reply(ctx, embed, true).await
         }
@@ -696,8 +696,8 @@ async fn send(
     #[description = "Send to"] user: serenity::User,
     #[description = "Amount"] amount: String,
     #[min_length = 10]
-    #[description = "Wallet secret"]
-    secret: String,
+    #[description = "password"]
+    password: String,
 ) -> Result<(), Error> {
     if user.bot || user.system {
         let embed = create_error_embed("Error", "User is a bot or a system user");
@@ -784,7 +784,7 @@ async fn send(
 
     let outputs = PaymentOutputs::from((address, amount_sompi));
     let abortable = Abortable::default();
-    let wallet_secret = Secret::from(secret);
+    let wallet_secret = Secret::from(password);
 
     let account = wallet.account()?;
 
@@ -841,8 +841,8 @@ async fn withdraw(
     #[description = "Spectre wallet address"] address: String,
     #[description = "Amount"] amount: String,
     #[min_length = 10]
-    #[description = "Wallet secret"]
-    secret: String,
+    #[description = "password"]
+    password: String,
 ) -> Result<(), Error> {
     let recipient_address = match Address::try_from(address.as_str()) {
         Ok(address) => address,
@@ -892,7 +892,7 @@ async fn withdraw(
 
     let outputs = PaymentOutputs::from((recipient_address.clone(), amount_sompi));
     let abortable = Abortable::default();
-    let wallet_secret = Secret::from(secret);
+    let wallet_secret = Secret::from(password);
 
     let account = wallet.account()?;
 
