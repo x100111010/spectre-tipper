@@ -159,8 +159,6 @@ impl TipOwnedWallet {
 
         let tip_wallet = TipOwnedWallet::new(owned_identifier.into(), wallet_arc, receive_address);
 
-        // tip_wallet.bind_rpc(&tip_context).await?;
-
         let tip_owned_wallet =
             tip_context.add_opened_owned_wallet(owned_identifier.into(), tip_wallet);
 
