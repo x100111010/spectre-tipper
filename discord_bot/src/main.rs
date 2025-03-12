@@ -6,13 +6,14 @@ use poise::{
 };
 use spectre_wallet_core::rpc::ConnectOptions;
 use spectre_wrpc_client::{
-    prelude::{ConnectStrategy, GetServerInfoResponse, NetworkId, RpcApi},
+    prelude::{ConnectStrategy, NetworkId},
     Resolver, SpectreRpcClient, WrpcEncoding,
 };
 use std::{env, path::Path, str::FromStr, sync::Arc, time::Duration};
 use tracing::{error, info};
 use tracing_subscriber::EnvFilter;
 
+use core::utils::check_node_status;
 use discord_bot::commands::*;
 use discord_bot::utils::*;
 
@@ -186,27 +187,4 @@ async fn main() {
         .framework(framework)
         .await;
     client.unwrap().start().await.unwrap();
-}
-
-async fn check_node_status(
-    wrpc_client: &Arc<SpectreRpcClient>,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let GetServerInfoResponse {
-        is_synced,
-        server_version,
-        network_id,
-        has_utxo_index,
-        ..
-    } = wrpc_client.get_server_info().await?;
-
-    info!(
-        "Node version: {}, Is Synced? {}, Has UTXO Index? {}, Network ID: {}",
-        server_version, is_synced, has_utxo_index, network_id
-    );
-
-    if is_synced {
-        Ok(())
-    } else {
-        Err("Node is not synced".into())
-    }
 }
