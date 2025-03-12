@@ -1,10 +1,5 @@
-use std::sync::Arc;
-
+use crate::models::{Context, Error};
 use crate::utils::*;
-use core::tip_context::TipContext;
-
-type Error = Box<dyn std::error::Error + Send + Sync>;
-type Context<'a> = poise::ApplicationContext<'a, Arc<TipContext>, Error>;
 
 #[poise::command(slash_command, category = "wallet")]
 /// close the opened discord wallet

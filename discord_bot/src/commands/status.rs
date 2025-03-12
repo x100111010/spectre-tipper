@@ -1,14 +1,11 @@
-use std::sync::Arc;
-
-use core::{tip_context::TipContext, tip_transition_wallet::TipTransitionWallet};
+use core::tip_transition_wallet::TipTransitionWallet;
 use futures::future::join_all;
 
 use crate::utils::*;
 use spectre_wallet_core::utils::sompi_to_spectre_string_with_suffix;
 use spectre_wallet_keys::secret::Secret;
 
-type Error = Box<dyn std::error::Error + Send + Sync>;
-type Context<'a> = poise::ApplicationContext<'a, Arc<TipContext>, Error>;
+use crate::models::{Context, Error};
 
 #[poise::command(slash_command, category = "wallet")]
 /// get the status of your discord wallet

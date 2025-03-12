@@ -1,8 +1,9 @@
-use crate::{Context, Error};
 use poise::{
     serenity_prelude::{Colour, CreateEmbed},
     CreateReply,
 };
+
+use crate::models::{Context, Error};
 
 // embed creation
 pub fn create_embed(title: &str, description: &str, colour: Colour) -> CreateEmbed {

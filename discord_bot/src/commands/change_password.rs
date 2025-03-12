@@ -1,13 +1,8 @@
-use std::sync::Arc;
-
 use core::error::Error as SpectreError;
 use spectre_wallet_core::prelude::Secret;
 
+use crate::models::{Context, Error};
 use crate::utils::*;
-use crate::TipContext;
-
-type Error = Box<dyn std::error::Error + Send + Sync>;
-type Context<'a> = poise::ApplicationContext<'a, Arc<TipContext>, Error>;
 
 #[poise::command(slash_command, category = "wallet")]
 /// change wallet password

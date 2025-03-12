@@ -1,20 +1,17 @@
-use std::sync::Arc;
-
-use core::{
-    tip_context::TipContext,
-    utils::{estimate_fees, get_tx_explorer_url, try_parse_required_nonzero_spectre_as_sompi_u64},
+use core::utils::{
+    estimate_fees, get_tx_explorer_url, try_parse_required_nonzero_spectre_as_sompi_u64,
 };
 use spectre_wallet_core::{
     prelude::Address,
     tx::{Fees, PaymentOutputs},
 };
 use spectre_wallet_keys::secret::Secret;
+use std::sync::Arc;
 use workflow_core::abortable::Abortable;
 
 use crate::utils::*;
 
-type Error = Box<dyn std::error::Error + Send + Sync>;
-type Context<'a> = poise::ApplicationContext<'a, Arc<TipContext>, Error>;
+use crate::models::{Context, Error};
 
 #[poise::command(slash_command, category = "wallet")]
 /// withdraw funds to a custom Spectre address

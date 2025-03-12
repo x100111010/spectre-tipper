@@ -1,11 +1,8 @@
-use std::sync::Arc;
-
 use crate::utils::*;
-use core::{tip_context::TipContext, tip_owned_wallet::TipOwnedWallet};
+use core::tip_owned_wallet::TipOwnedWallet;
 use spectre_wallet_keys::secret::Secret;
 
-type Error = Box<dyn std::error::Error + Send + Sync>;
-type Context<'a> = poise::ApplicationContext<'a, Arc<TipContext>, Error>;
+use crate::models::{Context, Error};
 
 #[poise::command(slash_command, category = "wallet")]
 /// create (initiate) a fresh discord wallet protected by a password of your choice
