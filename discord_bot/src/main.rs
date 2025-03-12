@@ -204,9 +204,13 @@ async fn check_node_status(
         server_version, is_synced, has_utxo_index, network_id
     );
 
-    if is_synced {
-        Ok(())
-    } else {
-        Err("Node is not synced".into())
+    if !is_synced {
+        return Err("Node is not synced".into());
     }
+
+    if !has_utxo_index {
+        return Err("Node is not utxo indexed. Run with --utxoindex".into());
+    }
+
+    Ok(())
 }
