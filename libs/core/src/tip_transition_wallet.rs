@@ -1,4 +1,4 @@
-use std::{sync::Arc, time::SystemTime};
+use std::sync::Arc;
 
 use crate::tip_context::TipContext;
 use crate::utils::{
@@ -20,7 +20,6 @@ pub struct TipTransitionWallet {
     initiator_identifier: String,
     wallet: Arc<Wallet>,
     receive_address: Address,
-    opened_at: SystemTime,
 }
 
 impl TipTransitionWallet {
@@ -31,7 +30,6 @@ impl TipTransitionWallet {
         receive_address: Address,
     ) -> Self {
         TipTransitionWallet {
-            opened_at: SystemTime::now(),
             initiator_identifier,
             target_identifier,
             receive_address,
@@ -169,7 +167,7 @@ impl TipTransitionWallet {
         wallet_arc
             .account()?
             .utxo_context()
-            .register_addresses(&vec![receive_address.clone()])
+            .register_addresses(&[receive_address.clone()])
             .await?;
 
         let tip_wallet = TipTransitionWallet::new(
@@ -195,9 +193,6 @@ impl TipTransitionWallet {
     }
 
     pub fn wallet_identifier(&self) -> String {
-        return build_transition_wallet_identifier(
-            &self.target_identifier,
-            &self.initiator_identifier,
-        );
+        build_transition_wallet_identifier(&self.target_identifier, &self.initiator_identifier)
     }
 }

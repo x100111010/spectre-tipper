@@ -83,11 +83,11 @@ pub async fn status(ctx: Context<'_>) -> Result<(), Error> {
             Err(e) => {
                 println!("warning: {:?}", e);
 
-                0 as u64
+                0_u64
             }
         };
 
-        return balance;
+        balance
     }))
     .await
     .into_iter()

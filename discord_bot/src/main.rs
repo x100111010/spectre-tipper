@@ -80,7 +80,7 @@ async fn main() {
             WrpcEncoding::Borsh,
             forced_spectre_node.as_deref(),
             Some(resolver.clone()),
-            Some(network_id.clone()),
+            Some(network_id),
             None,
         )
         .unwrap(),
@@ -152,7 +152,7 @@ async fn main() {
                             .await;
 
                             match send_result {
-                                Ok(_) => return,
+                                Ok(_) => (),
                                 _ => eprintln!("Error - Impossible to forward error via Discord, initial error: {}", error),
                             };
                         }

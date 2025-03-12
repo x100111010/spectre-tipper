@@ -53,6 +53,6 @@ pub async fn change_password(
             );
             send_reply(ctx, embed, true).await
         }
-        Err(error) => return Err(Error::from(error)),
+        Err(error) => Err(Error::from(error)),
     }
 }

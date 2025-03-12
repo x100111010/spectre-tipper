@@ -46,7 +46,7 @@ pub fn try_parse_required_nonzero_spectre_as_sompi_u64<S: ToString + Display>(
 }
 
 pub fn generate_random_transition_wallet_secret() -> String {
-    return Alphanumeric.sample_string(&mut rand::thread_rng(), 12);
+    Alphanumeric.sample_string(&mut rand::thread_rng(), 12)
 }
 
 pub async fn connect_wallet_to_rpc(wallet: &Arc<Wallet>, rpc_api: Arc<dyn RpcApi>) -> Result<()> {
@@ -57,14 +57,14 @@ pub async fn connect_wallet_to_rpc(wallet: &Arc<Wallet>, rpc_api: Arc<dyn RpcApi
 
     wallet.bind_rpc(Some(rpc)).await?;
 
-    return Ok(());
+    Ok(())
 }
 
 pub fn build_transition_wallet_identifier(
     target_identifier: &str,
     initiator_identifier: &str,
 ) -> String {
-    return format!("transition-{}-{}", target_identifier, initiator_identifier);
+    format!("transition-{}-{}", target_identifier, initiator_identifier)
 }
 
 pub async fn estimate_fees(
@@ -95,5 +95,5 @@ pub fn get_tx_explorer_url(tx_id: &str, network_type: NetworkType) -> String {
         _ => "explorer-tn",
     };
 
-    return format!("https://{}.spectre-network.org/txs/{}", sub_domain, tx_id);
+    format!("https://{}.spectre-network.org/txs/{}", sub_domain, tx_id)
 }

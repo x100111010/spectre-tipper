@@ -89,11 +89,11 @@ pub async fn claim(ctx: Context<'_>) -> Result<(), Error> {
             Err(e) => {
                 println!("warning: {:?}", e);
 
-                0 as u64
+                0_u64
             }
         };
 
-        return balance;
+        balance
     }))
     .await
     .into_iter()
@@ -183,7 +183,7 @@ pub async fn claim(ctx: Context<'_>) -> Result<(), Error> {
                             "Successfully claimed funds from transition wallets.",
                             &format!("summary {:?}\n hashes: {:?}", summary, hashes),
                         );
-                        send_reply(ctx.clone(), embed, true).await?;
+                        send_reply(ctx, embed, true).await?;
                     }
                 }
 

@@ -81,5 +81,5 @@ pub async fn compound(
         }
     }
 
-    return Ok(());
+    Ok(())
 }
