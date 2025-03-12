@@ -1,13 +1,9 @@
-use std::sync::Arc;
-
 use crate::utils::*;
-use core::tip_context::TipContext;
 use poise::{serenity_prelude::Colour, Modal};
 use spectre_wallet_core::settings::application_folder;
 use tokio::fs;
 
-type Error = Box<dyn std::error::Error + Send + Sync>;
-type Context<'a> = poise::ApplicationContext<'a, Arc<TipContext>, Error>;
+use crate::models::{Context, Error};
 
 #[derive(Debug, poise::Modal)]
 #[name = "Confirm wallet destruction"]

@@ -1,9 +1,6 @@
-use std::sync::Arc;
-
 use crate::utils::*;
 use core::{
     error::Error as SpectreError,
-    tip_context::TipContext,
     tip_transition_wallet::TipTransitionWallet,
     utils::{get_tx_explorer_url, try_parse_required_nonzero_spectre_as_sompi_u64},
 };
@@ -13,11 +10,11 @@ use poise::{
 };
 use spectre_wallet_core::tx::{Fees, PaymentOutputs};
 use spectre_wallet_keys::secret::Secret;
+use std::sync::Arc;
 
 use workflow_core::abortable::Abortable;
 
-type Error = Box<dyn std::error::Error + Send + Sync>;
-type Context<'a> = poise::ApplicationContext<'a, Arc<TipContext>, Error>;
+use crate::models::{Context, Error};
 
 #[poise::command(slash_command, category = "wallet")]
 /// send to user the given amount

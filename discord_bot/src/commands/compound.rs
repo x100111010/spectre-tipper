@@ -1,13 +1,8 @@
-use std::sync::Arc;
-
-use core::tip_context::TipContext;
 use spectre_wallet_keys::secret::Secret;
 use workflow_core::abortable::Abortable;
 
+use crate::models::{Context, Error};
 use crate::utils::*;
-
-type Error = Box<dyn std::error::Error + Send + Sync>;
-type Context<'a> = poise::ApplicationContext<'a, Arc<TipContext>, Error>;
 
 #[poise::command(slash_command, category = "wallet")]
 /// compound utxo

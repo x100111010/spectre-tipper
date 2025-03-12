@@ -1,17 +1,14 @@
 use std::sync::Arc;
 
 use crate::utils::*;
-use core::{
-    tip_context::TipContext, tip_transition_wallet::TipTransitionWallet, utils::estimate_fees,
-};
+use core::{tip_transition_wallet::TipTransitionWallet, utils::estimate_fees};
 use futures::future::join_all;
 use spectre_wallet_core::tx::{Fees, PaymentOutputs};
 use spectre_wallet_keys::secret::Secret;
 
 use workflow_core::abortable::Abortable;
 
-type Error = Box<dyn std::error::Error + Send + Sync>;
-type Context<'a> = poise::ApplicationContext<'a, Arc<TipContext>, Error>;
+use crate::models::{Context, Error};
 
 #[poise::command(slash_command, category = "wallet")]
 /// transfers funds from transition_wallet to owned_wallet

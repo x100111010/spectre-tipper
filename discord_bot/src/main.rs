@@ -1,6 +1,3 @@
-mod commands;
-mod utils;
-
 use core::tip_context::TipContext;
 use poise::{
     samples::on_error,
@@ -13,9 +10,11 @@ use spectre_wrpc_client::{
     Resolver, SpectreRpcClient, WrpcEncoding,
 };
 use std::{env, path::Path, str::FromStr, sync::Arc, time::Duration};
+use tracing::{error, info};
+use tracing_subscriber::EnvFilter;
 
-use crate::commands::*;
-use crate::utils::*;
+use discord_bot::commands::*;
+use discord_bot::utils::*;
 
 type Error = Box<dyn std::error::Error + Send + Sync>;
 type Context<'a> = poise::ApplicationContext<'a, Arc<TipContext>, Error>;
@@ -50,6 +49,10 @@ async fn main() {
         Ok(_) => println!("Environment variables loaded from .env"),
         Err(_) => println!("Not loading environement variables from .env"),
     }
+
+    tracing_subscriber::fmt()
+        .with_env_filter(EnvFilter::from_default_env())
+        .init();
 
     let discord_token = match env::var("DISCORD_TOKEN") {
         Ok(v) => v,
@@ -98,19 +101,22 @@ async fn main() {
         }))
         .await
     {
-        Ok(_) => println!("Successfully connected to the node."),
+        Ok(_) => info!(
+            "Node {} is reachable, checking capabilities.",
+            wrpc_client.ctl().descriptor().unwrap()
+        ),
         Err(e) => {
-            eprintln!("Failed to connect to the node: {}", e);
+            error!("Failed to connect to the node: {}", e);
             panic!("Connection failed: {}", e);
         }
     }
 
     match check_node_status(&wrpc_client).await {
         Ok(_) => {
-            println!("Successfully completed client connection to the Spectre node!");
+            info!("Successfully completed client connection to the Spectre node!");
         }
         Err(error) => {
-            eprintln!("An error occurred: {}", error);
+            error!("An error occurred: {}", error);
             std::process::exit(1);
         }
     }
@@ -139,7 +145,7 @@ async fn main() {
                         // set ephemeral to true by default on unexpected command error (avoid data leaks on unhandled errors)
                         FrameworkError::Command { ctx, error, .. } => {
                             let error = error.to_string();
-                            eprintln!("An error occured in a command: {}", error);
+                            error!("An error occured in a command: {}", error);
 
                             let embed =
                                 create_error_embed("Error", &format!("An unexpected error occured, please report bugs to the developers: {}", error));
@@ -153,13 +159,13 @@ async fn main() {
 
                             match send_result {
                                 Ok(_) => (),
-                                _ => eprintln!("Error - Impossible to forward error via Discord, initial error: {}", error),
+                                _ => error!("Error - Impossible to forward error via Discord, initial error: {}", error),
                             };
                         }
                         // fallback all other error types to the default error handler
                         _ => {
                             if let Err(e) = on_error(error).await {
-                                tracing::error!("Error while handling error: {}", e);
+                                error!("Error while handling error: {}", e);
                             }
                         }
                     }
@@ -193,10 +199,10 @@ async fn check_node_status(
         ..
     } = wrpc_client.get_server_info().await?;
 
-    println!("Node version: {}", server_version);
-    println!("Network: {}", network_id);
-    println!("is synced: {}", is_synced);
-    println!("is indexing UTXOs: {}", has_utxo_index);
+    info!(
+        "Node version: {}, Is Synced? {}, Has UTXO Index? {}, Network ID: {}",
+        server_version, is_synced, has_utxo_index, network_id
+    );
 
     if is_synced {
         Ok(())
