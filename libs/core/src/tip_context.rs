@@ -4,11 +4,7 @@ use std::{
     sync::{Arc, RwLock},
 };
 
-use spectre_wallet_core::{
-    rpc::RpcApi,
-    storage::{keydata::info, Interface},
-    wallet::Wallet,
-};
+use spectre_wallet_core::{rpc::RpcApi, storage::Interface, wallet::Wallet};
 use spectre_wrpc_client::{prelude::NetworkId, Resolver, SpectreRpcClient};
 use tracing::info;
 
