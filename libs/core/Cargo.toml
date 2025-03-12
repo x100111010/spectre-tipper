@@ -16,6 +16,7 @@ serde_json = "1.0"
 serde = "1.0"
 tokio = { version = "1", features = ["full", "rt"] }
 futures-util = "0.3.31"
+tracing = "0.1"
 
 [dev-dependencies]
 tokio = { version = "1", features = ["full"] }

@@ -6,6 +6,7 @@ use std::{
 
 use spectre_wallet_core::{rpc::RpcApi, storage::Interface, wallet::Wallet};
 use spectre_wrpc_client::{prelude::NetworkId, Resolver, SpectreRpcClient};
+use tracing::info;
 
 use crate::{
     owned_wallet_metadata::OwnedWalletMetadataStore, result::Result,
@@ -34,8 +35,15 @@ impl TipContext {
             wallet_data_path_buf.clone().join("transitions.json");
         let owned_wallet_metadata_path_buf = wallet_data_path_buf.clone().join("owned.json");
 
-        println!("{}", owned_wallet_metadata_path_buf.to_str().unwrap());
-        println!("{}", transition_wallet_metadata_path_buf.to_str().unwrap());
+        info!(
+            "Using {} as owned wallet metadata store",
+            owned_wallet_metadata_path_buf.to_str().unwrap()
+        );
+
+        info!(
+            "Using {} as transition wallet metadata store",
+            transition_wallet_metadata_path_buf.to_str().unwrap()
+        );
 
         let transition_wallet_metadata_store =
             TransitionWalletMetadataStore::new(&transition_wallet_metadata_path_buf)?;

@@ -1,4 +1,4 @@
-use std::{sync::Arc, time::SystemTime};
+use std::sync::Arc;
 
 use crate::error::Error;
 use crate::tip_context::TipContext;
@@ -19,13 +19,11 @@ pub struct TipOwnedWallet {
     owned_identifier: String,
     wallet: Arc<Wallet>,
     receive_address: Address,
-    opened_at: SystemTime,
 }
 
 impl TipOwnedWallet {
     pub fn new(owned_identifier: String, wallet: Arc<Wallet>, receive_address: Address) -> Self {
         TipOwnedWallet {
-            opened_at: SystemTime::now(),
             owned_identifier,
             receive_address,
             wallet,
@@ -98,7 +96,7 @@ impl TipOwnedWallet {
         wallet_arc
             .account()?
             .utxo_context()
-            .register_addresses(&vec![receive_address.clone()])
+            .register_addresses(&[receive_address.clone()])
             .await?;
 
         let tip_wallet = TipOwnedWallet::new(owned_identifier.into(), wallet_arc, receive_address);
@@ -154,7 +152,7 @@ impl TipOwnedWallet {
         wallet_arc
             .account()?
             .utxo_context()
-            .register_addresses(&vec![receive_address.clone()])
+            .register_addresses(&[receive_address.clone()])
             .await?;
 
         let tip_wallet = TipOwnedWallet::new(owned_identifier.into(), wallet_arc, receive_address);
@@ -235,7 +233,7 @@ impl TipOwnedWallet {
         wallet_arc
             .account()?
             .utxo_context()
-            .register_addresses(&vec![receive_address.clone()])
+            .register_addresses(&[receive_address.clone()])
             .await?;
 
         let tip_owned_wallet =

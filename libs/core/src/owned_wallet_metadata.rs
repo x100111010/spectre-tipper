@@ -40,7 +40,7 @@ impl OwnedWalletMetadataStore {
             Err(_) => {
                 let mut created_file = File::create(path)?;
 
-                created_file.write(b"[]")?;
+                created_file.write_all(b"[]")?;
 
                 File::open(path)?
             }
